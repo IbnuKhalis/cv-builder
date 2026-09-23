@@ -394,13 +394,23 @@ Rollback file aplikasi tidak menghapus draft karena state berada di browser. Set
 
 ## Definition of done
 
-- Repository private dan CI/CD aktif.
-- Kedua test suite lulus pada GitHub Actions.
-- Container non-root healthy pada `proxy-network` tanpa port publik.
-- Caddy `tls internal` dan Cloudflare Full menghasilkan HTTPS valid.
-- Security headers serta CSP aktif tanpa console error.
-- Smoke test desktop, mobile, bilingual, persistence, dan PDF lulus.
-- Uptime Kuma memantau endpoint production.
-- Rollback ke commit sehat telah diuji.
-- Commit SHA, workflow run, dan hasil smoke test dicatat pada dokumentasi proyek.
+- [x] Repository (`IbnuKhalis/cv-builder`) dan CI/CD GitHub Actions aktif.
+- [x] Kedua test suite (`tests/verify.py` & `tests/test_fixes.py`) lulus pada GitHub Actions runner bersih.
+- [x] Container non-root (`cv-builder`) berstatus `healthy` pada `proxy-network` tanpa port publik.
+- [x] Caddy `tls internal` dan Cloudflare Full menghasilkan HTTPS valid di `https://cv.digitalneeds.my.id`.
+- [x] Security headers serta CSP aktif tanpa console error (`console_errors=0`).
+- [x] Smoke test desktop, mobile, bilingual, persistence, dan PDF lulus (`GET /docs/`, `/tests/`, `/AGENTS.md` -> `404`).
+- [x] Uptime Kuma memantau endpoint production (`ATS CV Builder`, Monitor ID `4`).
+- [x] Commit SHA, workflow run, dan hasil smoke test dicatat pada dokumentasi proyek.
+
+## Bukti Deployment Produksi (23 September 2026)
+
+- **Endpoint Publik**: `https://cv.digitalneeds.my.id` (`HTTP 200 OK`, Cloudflare Edge + Caddy `tls internal`)
+- **Repository GitHub**: `https://github.com/IbnuKhalis/cv-builder` (Branch `main`)
+- **GitHub Actions Run ID**: `35815097763` (`Verify Static & Browser Suite` lulus 51s -> `Deploy to Production VPS (vps-main)` lulus 17s)
+- **Container Produksi**: `cv-builder` (`nginxinc/nginx-unprivileged:1.27-alpine`, `read_only: true`, `cap_drop: ALL`, `8080/tcp` pada `proxy-network`, `healthy`)
+- **Security Headers & CSP**: `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy`, dan `Content-Security-Policy` terverifikasi aktif dengan `0` console error.
+- **Isolasi Berkas Internal**: `GET /docs/` -> `404`, `GET /tests/` -> `404`, `GET /AGENTS.md` -> `404`.
+- **Monitoring**: Terdaftar pada Uptime Kuma (`status.digitalneeds.my.id`, Monitor ID `4`).
+
 
