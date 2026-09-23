@@ -1,0 +1,496 @@
+/**
+ * Stylesheet Khusus Dokumen CV Berstandar ATS.
+ * Mengikuti spesifikasi:
+ * - Single-column ATS layout murni
+ * - Teks asli berbobot vektor, bebas screenshot
+ * - Tanpa foto, tanpa tabel, tanpa icon dekoratif / badge grafis
+ * - Paginasi A4 rapi, bebas clipping, dan tidak ada halaman kosong ekstra
+ * - Heading standar industri
+ */
+
+/* ==========================================================================
+   Variabel Desain & Font ATS
+   ========================================================================== */
+:root {
+  --ats-font-family: Calibri, 'Segoe UI', Arial, sans-serif;
+  --ats-font-size: 10.5pt;
+  --ats-line-height: 1.45;
+  --ats-text-color: #111827;
+  --ats-muted-color: #4b5563;
+  --ats-heading-color: #000000;
+  --ats-border-color: #111827;
+}
+
+/* ==========================================================================
+   Wadah Dokumen A4 (Mode Layar / Pratinjau Langsung)
+   ========================================================================== */
+.a4-preview-wrapper {
+  background-color: #e2e8f0;
+  padding: 24px 16px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100%;
+  height: 100%;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: auto;
+  box-sizing: border-box;
+}
+
+.cv-document {
+  background: #ffffff;
+  width: 210mm;
+  min-height: 297mm;
+  padding: 18mm 18mm 18mm 18mm;
+  box-sizing: border-box;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+  color: var(--ats-text-color);
+  font-family: var(--ats-font-family);
+  font-size: var(--ats-font-size);
+  line-height: var(--ats-line-height);
+  position: relative;
+  margin: 0 auto;
+}
+
+/* ==========================================================================
+   Pemberitahuan Pratinjau Dokumen Kosong (Saat Pertama Kali Dibuka)
+   ========================================================================== */
+.cv-empty-state-notice {
+  text-align: center;
+  padding: 40px 20px;
+  border: 2px dashed #cbd5e1;
+  border-radius: 8px;
+  background-color: #fafbfc;
+  margin: 40px 0;
+}
+
+.empty-state-icon {
+  font-size: 2.5rem;
+  margin-bottom: 12px;
+}
+
+.empty-state-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 8px 0;
+}
+
+.empty-state-text {
+  font-size: 0.9rem;
+  color: #64748b;
+  max-width: 480px;
+  margin: 0 auto 18px auto;
+  line-height: 1.5;
+}
+
+.empty-state-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.empty-badge {
+  background-color: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  font-size: 0.775rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+.empty-state-actions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+/* ==========================================================================
+   Header Kontak / Identitas Profil (Single Column Plain Text)
+   ========================================================================== */
+.cv-header {
+  text-align: center;
+  margin-bottom: 14pt;
+  border-bottom: 1px solid #d1d5db;
+  padding-bottom: 10pt;
+}
+
+.cv-header.align-left {
+  text-align: left;
+}
+
+.cv-name {
+  font-size: 20pt;
+  font-weight: 700;
+  color: var(--ats-heading-color);
+  letter-spacing: 0.5px;
+  line-height: 1.2;
+  margin: 0 0 4pt 0;
+  text-transform: uppercase;
+}
+
+.cv-target-role {
+  font-size: 11.5pt;
+  font-weight: 600;
+  color: var(--ats-muted-color);
+  margin: 0 0 6pt 0;
+}
+
+.cv-contact-line {
+  font-size: 9.5pt;
+  color: var(--ats-text-color);
+  margin: 0;
+  line-height: 1.5;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 4pt 6pt;
+}
+
+.cv-header.align-left .cv-contact-line {
+  justify-content: flex-start;
+}
+
+.cv-contact-item {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.cv-contact-item:not(:last-child)::after {
+  content: "•";
+  margin-left: 6pt;
+  color: #9ca3af;
+}
+
+.cv-contact-item a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.cv-contact-item a:hover {
+  text-decoration: underline;
+}
+
+/* ==========================================================================
+   Section & Heading Standar ATS
+   ========================================================================== */
+.cv-section {
+  margin-bottom: 13pt;
+}
+
+/* Sembunyikan section kosong */
+.cv-section:empty,
+.cv-section.is-empty {
+  display: none !important;
+}
+
+.cv-section-title {
+  font-size: 11pt;
+  font-weight: 700;
+  color: var(--ats-heading-color);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  border-bottom: 1px solid var(--ats-border-color);
+  padding-bottom: 2pt;
+  margin: 0 0 7pt 0;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+/* Ringkasan Profesional */
+.cv-summary-text {
+  font-size: 10pt;
+  line-height: 1.45;
+  margin: 0;
+  text-align: justify;
+  text-justify: inter-word;
+  orphans: 2;
+  widows: 2;
+}
+
+/* ==========================================================================
+   Item Riwayat (Pengalaman, Pendidikan, Proyek, dsb.)
+   ========================================================================== */
+.cv-item {
+  margin-bottom: 9pt;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+
+.cv-item:last-child {
+  margin-bottom: 0;
+}
+
+.cv-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  flex-wrap: wrap;
+  margin-bottom: 1.5pt;
+  gap: 4pt;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.cv-item-title-group {
+  flex: 1 1 60%;
+}
+
+.cv-item-role {
+  font-weight: 700;
+  font-size: 10.5pt;
+  color: var(--ats-heading-color);
+}
+
+.cv-item-company,
+.cv-item-institution {
+  font-weight: 600;
+  font-size: 10.5pt;
+  color: var(--ats-text-color);
+}
+
+.cv-item-meta-group {
+  text-align: right;
+  flex: 0 0 auto;
+  font-size: 9.5pt;
+  color: var(--ats-muted-color);
+  white-space: nowrap;
+}
+
+.cv-item-period {
+  font-weight: 600;
+  color: var(--ats-text-color);
+}
+
+.cv-item-location {
+  font-style: normal;
+}
+
+.cv-item-submeta {
+  font-size: 9.5pt;
+  margin-bottom: 3pt;
+  color: var(--ats-muted-color);
+  break-inside: avoid;
+  page-break-inside: avoid;
+  break-after: avoid;
+  page-break-after: avoid;
+}
+
+.cv-item-gpa {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+/* Daftar Poin Bullet Pencapaian */
+.cv-bullet-list {
+  margin: 2pt 0 0 0;
+  padding-left: 16pt;
+  list-style-type: disc;
+  break-inside: auto;
+  page-break-inside: auto;
+}
+
+.cv-bullet-list li {
+  font-size: 10pt;
+  line-height: 1.45;
+  margin-bottom: 2pt;
+  text-align: justify;
+  text-justify: inter-word;
+  break-inside: avoid;
+  page-break-inside: avoid;
+  orphans: 2;
+  widows: 2;
+}
+
+.cv-bullet-list li:last-child {
+  margin-bottom: 0;
+}
+
+/* ==========================================================================
+   Section Keahlian (Skills) Standar ATS
+   ========================================================================== */
+.cv-skill-group {
+  font-size: 10pt;
+  line-height: 1.45;
+  margin-bottom: 3pt;
+}
+
+.cv-skill-group:last-child {
+  margin-bottom: 0;
+}
+
+.cv-skill-label {
+  font-weight: 700;
+  color: var(--ats-heading-color);
+}
+
+.cv-skill-values {
+  color: var(--ats-text-color);
+}
+
+/* ==========================================================================
+   Section Sertifikasi & Organisasi
+   ========================================================================== */
+.cv-cert-item,
+.cv-org-item {
+  margin-bottom: 6pt;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.cv-cert-item:last-child,
+.cv-org-item:last-child {
+  margin-bottom: 0;
+}
+
+/* ==========================================================================
+   STYLING KHUSUS CETAK & UNDUH PDF (@media print)
+   ========================================================================== */
+@media print {
+  /* Hilangkan seluruh elemen antarmuka aplikasi */
+  body, html {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    color: #000000 !important;
+    font-size: 10.5pt !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Sembunyikan UI navigasi, editor, toolbar, tombol */
+  .no-print,
+  .app-header,
+  .editor-pane,
+  .app-sidebar,
+  .modal-overlay,
+  .toast-container,
+  .preview-toolbar,
+  .a4-page-guide {
+    display: none !important;
+  }
+
+  .app-container {
+    display: block !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  .preview-pane {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+  }
+
+  .a4-preview-wrapper {
+    display: block !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    min-height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Format halaman A4 Murni untuk Browser Engine */
+  @page {
+    size: A4 portrait;
+    margin: 15mm 18mm 15mm 18mm;
+  }
+
+  .cv-document {
+    width: 100% !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: transparent !important;
+  }
+
+  /* Proteksi Pemisahan Halaman Cetak & PDF */
+  .cv-header {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  .cv-section {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .cv-section-title {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  /* Item pengalaman/pendidikan dapat mengalir alami melintasi batas halaman */
+  .cv-item {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  /* Header entri (jabatan, perusahaan, tanggal, IPK) tidak boleh tertinggal sendirian di dasar halaman (anti-orphan) */
+  .cv-item-header {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  .cv-item-submeta {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
+  /* Daftar butir pencapaian memecah secara alami per butir */
+  .cv-bullet-list {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  .cv-bullet-list li {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    orphans: 2 !important;
+    widows: 2 !important;
+  }
+
+  /* Item pendek (1-2 baris) dipertahankan tetap utuh */
+  .cv-cert-item,
+  .cv-org-item {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  .cv-skill-group {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* Mencegah link url tercetak berantakan */
+  a[href]:after {
+    content: none !important;
+  }
+}

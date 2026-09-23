@@ -1,0 +1,8 @@
+# Pinned development & browser test dependencies for ATS CV Builder
+# Setup from clean checkout:
+#   python -m pip install -r requirements-dev.txt
+#   python -m playwright install chromium
+playwright==1.58.0
+greenlet==3.1.1
+pyee==12.1.1
+typing_extensions==4.12.2

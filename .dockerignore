@@ -1,0 +1,14 @@
+.git
+.github
+.agents
+docs
+tests
+AGENTS.md
+README.md
+requirements-dev.txt
+server.py
+*.png
+*.pdf
+*.json
+.env
+.env.*

@@ -1,0 +1,15 @@
+# Environment & secrets
+.env
+.env.*
+
+# Python cache & virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Temporary QA / test output files
+*.pdf
+*.png
+test-results/
+playwright-report/

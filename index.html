@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ATS CV Builder Indonesia — Pembuat CV Standar ATS Cepat & Mudah</title>
+  <meta name="description" content="Aplikasi pembuat CV ATS bahasa Indonesia. Format single-column, bebas foto & tabel, ramah mesin pemindai ATS, simpan langsung ke PDF vektor asli.">
+  
+  <!-- Stylesheets -->
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/cv-ats.css">
+</head>
+<body>
+
+  <!-- ====================================================================
+       Header Aplikasi & Hierarki Tindakan Utama
+       ==================================================================== -->
+  <header class="app-header no-print">
+    <div class="brand-wrapper">
+      <div class="brand-top-row">
+        <h1 class="brand-title">
+          <span>ATS CV Builder</span>
+          <span class="badge-ats">Standar ATS</span>
+        </h1>
+        <button type="button" id="btn-open-versions-modal" class="btn-version-pill" aria-label="Kelola versi dokumen CV">
+          <span id="active-version-label">Draft Utama</span>
+          <span aria-hidden="true">▾</span>
+        </button>
+      </div>
+      <div class="save-indicator" id="save-indicator-box">
+        <span class="save-dot" id="save-status-dot" aria-hidden="true"></span>
+        <span id="save-status-text" role="status" aria-live="polite" data-i18n="status.ready">Siap mengedit • Penyimpanan lokal aktif</span>
+        <button type="button" id="btn-backup-on-error" class="btn-inline-backup" style="display: none;" data-i18n="status.downloadBackupBtn">
+          💾 Unduh Backup JSON
+        </button>
+        <span class="privacy-micro-note" data-i18n="status.privacyNote" title="Seluruh data CV diproses dan disimpan di perangkat ini tanpa dikirim ke server luar">
+          🔒 100% Lokal di Browser Anda (Tanpa Pengiriman Data ke Server)
+        </span>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <!-- Salin Teks ATS -->
+      <button type="button" id="btn-copy-plain-text" class="btn btn-secondary btn-sm" aria-label="Salin seluruh isi CV sebagai teks polos">
+        <span data-i18n="header.copyPlainText">📋 Salin Teks</span>
+      </button>
+
+      <!-- Menu Lainnya (Tindakan Sekunder + Bahasa Aplikasi) -->
+      <details id="header-more-dropdown" class="header-more-dropdown">
+        <summary class="btn btn-secondary btn-sm" aria-label="Menu tindakan lainnya">
+          <span data-i18n="header.moreMenu">Lainnya ▾</span>
+        </summary>
+        <div class="dropdown-menu-panel" role="menu">
+          <div class="dropdown-lang-box" style="padding: 8px 12px;">
+            <label for="select-interface-language" class="form-label" style="font-size: 0.75rem; margin-bottom: 4px; display: block;" data-i18n="header.appLanguageLabel">🌐 Bahasa Aplikasi</label>
+            <select id="select-interface-language" class="form-select" style="padding: 5px 8px; font-size: 0.8rem; width: 100%;">
+              <option value="id">Bahasa Indonesia (ID)</option>
+              <option value="en">English (EN)</option>
+            </select>
+          </div>
+          <hr class="dropdown-divider" />
+          <button type="button" id="btn-open-sample-modal" class="dropdown-item" role="menuitem">
+            <span data-i18n="header.loadSample">📋 Muat Data Contoh</span>
+          </button>
+          <button type="button" id="btn-open-versions-menu" class="dropdown-item" role="menuitem">
+            <span data-i18n="header.manageVersions">🗂️ Kelola Versi CV</span>
+          </button>
+          <hr class="dropdown-divider" />
+          <input type="file" id="input-import-json" accept=".json" style="display: none;" />
+          <button type="button" id="btn-import-json-trigger" class="dropdown-item" role="menuitem">
+            <span data-i18n="header.importJson">📂 Impor File JSON</span>
+          </button>
+          <button type="button" id="btn-export-json" class="dropdown-item" role="menuitem">
+            <span data-i18n="header.exportJson">💾 Ekspor Backup JSON</span>
+          </button>
+          <hr class="dropdown-divider" />
+          <button type="button" id="btn-reset-cv" class="dropdown-item dropdown-item-danger" role="menuitem">
+            <span data-i18n="header.resetCv">🗑️ Kosongkan Formulir</span>
+          </button>
+        </div>
+      </details>
+
+      <!-- Aksi Utama: Unduh PDF -->
+      <button type="button" id="btn-download-pdf" class="btn btn-primary" aria-label="Periksa dan unduh CV sebagai PDF">
+        <span data-i18n="header.downloadPdf">🖨️ Unduh PDF</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Navigasi Tab Mobile (Hanya muncul di layar HP) -->
+  <nav class="mobile-view-tabs no-print" aria-label="Mode tampilan layar ponsel">
+    <button type="button" id="tab-mobile-editor" class="tab-btn active" data-i18n="mobileTabs.editForm">✏️ Edit Formulir CV</button>
+    <button type="button" id="tab-mobile-preview" class="tab-btn" data-i18n="mobileTabs.previewDoc">📄 Pratinjau Dokumen</button>
+  </nav>
+
+  <!-- ====================================================================
+       Wadah Utama: Split Pane (Editor Kiri | Preview Kanan)
+       ==================================================================== -->
+  <main class="app-container">
+    
+    <!-- ==================================================================
+         Kolom Kiri: Formulir Editor Terpandu (Wizard 5 Langkah / Semua)
+         ================================================================== -->
+    <aside class="editor-pane panel-editor no-print" id="editor-scroll-pane">
+      
+      <!-- Peringatan Pemulihan Data Rusak (Muncul hanya jika localStorage rusak) -->
+      <div id="corrupt-storage-alert" class="corrupt-storage-alert" role="alert" style="display: none;">
+        <div class="corrupt-alert-content">
+          <strong data-i18n="corruptAlert.title">⚠️ Data penyimpanan lokal tidak dapat dibaca (rusak).</strong>
+          <p data-i18n="corruptAlert.body">Kami memuat formulir kosong baru tanpa menghapus data mentah Anda di penyimpanan browser. Anda dapat mengimpor file Backup JSON jika ada, atau klik tombol di bawah untuk mereset penyimpanan.</p>
+        </div>
+        <button type="button" id="btn-clear-corrupt-storage" class="btn btn-subtle btn-sm" data-i18n="corruptAlert.resetBtn">Reset Penyimpanan Rusak</button>
+      </div>
+
+      <!-- Banner Onboarding Pilihan Jalur (Ditampilkan jika formulir masih kosong / first visit) -->
+      <div id="starter-banner-card" class="starter-banner-card" style="display: none;">
+        <div class="starter-banner-header">
+          <h2 class="starter-title" data-i18n="starterBanner.title">👋 Mulai Cepat: Pilih Jalur Karir atau Gunakan Contoh CV</h2>
+          <p class="starter-desc" data-i18n="starterBanner.desc">
+            Formulir dimulai dalam keadaan kosong. Pilih contoh CV sesuai profil Anda untuk melihat format standar ATS, atau mulai isi dari awal.
+          </p>
+        </div>
+        <div class="starter-actions">
+          <button type="button" id="btn-starter-experienced" class="btn btn-primary btn-sm">
+            <span data-i18n="starterBanner.btnExperienced">💼 Contoh Profesional</span>
+          </button>
+          <button type="button" id="btn-starter-freshgrad" class="btn btn-secondary btn-sm">
+            <span data-i18n="starterBanner.btnFreshGrad">🎓 Contoh Fresh Graduate</span>
+          </button>
+          <button type="button" id="btn-starter-empty" class="btn btn-subtle btn-sm">
+            <span data-i18n="starterBanner.btnStartEmpty">✏️ Isi Sendiri dari Kosong</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Bar Kontrol Jalur & Navigasi Wizard 5 Langkah -->
+      <div class="wizard-control-card">
+        <div class="wizard-top-meta">
+          <div class="career-track-selector-group">
+            <label for="select-career-track" class="track-label" data-i18n="wizard.careerTrackLabel">Jalur Karir:</label>
+            <select id="select-career-track" class="track-select" aria-label="Pilih jalur karier untuk urutan dan rekomendasi">
+              <option value="experienced" data-i18n="wizard.trackExperienced">💼 Profesional Berpengalaman</option>
+              <option value="freshgrad" data-i18n="wizard.trackFreshGrad">🎓 Fresh Graduate / Magang</option>
+            </select>
+          </div>
+          <button type="button" id="btn-toggle-editor-mode" class="btn-mode-toggle" aria-pressed="true" data-i18n="wizard.modeWizard">
+            Mode: 5 Langkah (Tampilkan Semua)
+          </button>
+        </div>
+
+        <nav id="wizard-steps-nav" class="wizard-steps-nav" aria-label="Langkah pembuatan CV">
+          <button type="button" class="wizard-step-btn active" data-step="1" aria-current="step">
+            <span class="step-label" data-i18n="wizard.step1">1. Profil</span>
+          </button>
+          <button type="button" class="wizard-step-btn" data-step="2">
+            <span class="step-label" data-i18n="wizard.step2">2. Pengalaman</span>
+          </button>
+          <button type="button" class="wizard-step-btn" data-step="3">
+            <span class="step-label" data-i18n="wizard.step3">3. Pendidikan</span>
+          </button>
+          <button type="button" class="wizard-step-btn" data-step="4">
+            <span class="step-label" data-i18n="wizard.step4">4. Keahlian</span>
+          </button>
+          <button type="button" class="wizard-step-btn" data-step="5">
+            <span class="step-label" data-i18n="wizard.step5">5. Finalisasi</span>
+          </button>
+        </nav>
+      </div>
+
+      <!-- Widget Status Kualitas & Checklist Tindakan (Memisahkan Kelengkapan Data & Kualitas Isi) -->
+      <div class="completeness-card">
+        <div class="completeness-header">
+          <div>
+            <span class="completeness-title" data-i18n="readiness.title">Kesiapan Dokumen CV</span>
+            <span id="completeness-status-badge" class="quality-status-badge status-incomplete" data-i18n="readiness.statusNeedsCompletion">Perlu Dilengkapi</span>
+          </div>
+          <span id="completeness-percent" class="completeness-percent" title="Indikator kesiapan pengisian">0%</span>
+        </div>
+
+        <!-- Bar Kompatibilitas Utama -->
+        <div class="progress-bar-bg" style="display: none;">
+          <div id="completeness-fill" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+
+        <!-- Dua Pilar Terpisah: Kelengkapan Data vs Kualitas Isi -->
+        <div class="dual-pillars-grid">
+          <div class="pillar-item">
+            <div class="pillar-header">
+              <span data-i18n="readiness.pillarData">Kelengkapan Data</span>
+              <strong id="data-completeness-percent">0%</strong>
+            </div>
+            <div class="progress-bar-bg">
+              <div id="data-completeness-fill" class="progress-bar-fill" style="width: 0%;"></div>
+            </div>
+          </div>
+          <div class="pillar-item">
+            <div class="pillar-header">
+              <span data-i18n="readiness.pillarQuality">Kualitas Isi & Dampak</span>
+              <strong id="content-quality-percent">0%</strong>
+            </div>
+            <div class="progress-bar-bg">
+              <div id="content-quality-fill" class="progress-bar-fill" style="width: 0%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <details id="completeness-details">
+          <summary class="tips-toggle-summary" data-i18n="readiness.viewDetails">Lihat daftar rekomendasi & perbaikan cepat</summary>
+          <ul id="completeness-tips-list" class="tips-list">
+            <!-- Diisi secara otomatis oleh js/app.js dengan tombol 'Perbaiki sekarang' -->
+          </ul>
+        </details>
+      </div>
+
+      <!-- ==================================================================
+           LANGKAH 1: PROFIL & RINGKASAN
+           ================================================================== -->
+      <div class="form-section-box editor-section" data-wizard-step="1">
+        <div class="section-box-header">
+          <div>
+            <h2 class="section-box-title" data-i18n="sections.profileTitle">Informasi Kontak & Profil</h2>
+            <div class="section-box-desc" data-i18n="sections.profileHelper">Hindari mencantumkan foto, tanggal lahir, status pernikahan, atau alamat rumah lengkap.</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label" for="prof-name"><span data-i18n="fields.fullName">Nama Lengkap & Gelar</span> <span class="required">*</span></label>
+              <input type="text" id="prof-name" class="form-input" placeholder="Contoh: Budi Pratama, S.Kom." aria-describedby="err-prof-name" />
+              <div id="err-prof-name" class="field-error" role="alert"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="prof-title"><span data-i18n="fields.jobTitle">Target Posisi / Profesi</span> <span class="required">*</span></label>
+              <input type="text" id="prof-title" class="form-input" placeholder="Contoh: Data Analyst / Backend Engineer" aria-describedby="err-prof-title" />
+              <div id="err-prof-title" class="field-error" role="alert"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="prof-email"><span data-i18n="fields.email">Alamat Email</span> <span class="required">*</span></label>
+              <input type="email" id="prof-email" class="form-input" placeholder="Contoh: budi.pratama@email.com" aria-describedby="err-prof-email" />
+              <div id="err-prof-email" class="field-error" role="alert"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="prof-phone"><span data-i18n="fields.phone">Nomor Telepon / WhatsApp</span> <span class="required">*</span></label>
+              <input type="tel" id="prof-phone" class="form-input" placeholder="Contoh: +62 812-3456-7890" aria-describedby="err-prof-phone" />
+              <div id="err-prof-phone" class="field-error" role="alert"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="prof-location"><span data-i18n="fields.location">Domisili (Kota, Provinsi)</span> <span class="required">*</span></label>
+              <input type="text" id="prof-location" class="form-input" placeholder="Contoh: Jakarta Selatan, DKI Jakarta" aria-describedby="err-prof-location" />
+              <div id="err-prof-location" class="field-error" role="alert"></div>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="prof-linkedin" data-i18n="fields.linkedin">URL LinkedIn (Opsional)</label>
+              <input type="text" id="prof-linkedin" class="form-input" placeholder="Contoh: linkedin.com/in/budipratama" aria-describedby="err-prof-linkedin" />
+              <div id="err-prof-linkedin" class="field-error" role="alert"></div>
+            </div>
+            <div class="form-group form-grid-full">
+              <label class="form-label" for="prof-portfolio" data-i18n="fields.portfolio">Portofolio / GitHub / Web (Opsional)</label>
+              <input type="text" id="prof-portfolio" class="form-input" placeholder="Contoh: github.com/budipratama" aria-describedby="err-prof-portfolio" />
+              <div id="err-prof-portfolio" class="field-error" role="alert"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section-box editor-section" data-wizard-step="1">
+        <div class="section-box-header">
+          <div>
+            <h2 class="section-box-title" data-i18n="sections.summaryTitle">Ringkasan Profesional</h2>
+            <div class="section-box-desc" id="summary-helper-desc" data-i18n="sections.summaryHelper">Tulis 2–4 kalimat padat tentang keahlian utama, tahun pengalaman/studi, dan nilai tambah Anda.</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="form-group">
+            <label class="form-label" for="summary-textarea" data-i18n="fields.summaryLabel">Paragraf Ringkasan (30 - 80 kata)</label>
+            <textarea id="summary-textarea" class="form-textarea" rows="4" placeholder="Tuliskan ringkasan profil Anda (30–80 kata)..." aria-describedby="summary-word-count err-summary"></textarea>
+            <div class="field-meta-row">
+              <div id="summary-word-count" class="char-counter">0 kata (Saran: 30 - 80 kata)</div>
+              <div id="err-summary" class="field-error" role="alert"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================================================================
+           LANGKAH 2: PENGALAMAN, PROYEK & ORGANISASI
+           ================================================================== -->
+      <div class="form-section-box editor-section" data-wizard-step="2">
+        <div class="section-box-header">
+          <div>
+            <h2 class="section-box-title" data-i18n="sections.experienceTitle">Pengalaman Kerja & Magang</h2>
+            <div class="section-box-desc" id="exp-section-helper" data-i18n="sections.experienceHelperExp">Urutkan dari pengalaman paling baru (Reverse-Chronological). Fokus pada pencapaian terukur.</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div id="experience-repeatable-list" class="repeatable-list">
+            <!-- Diisi secara dinamis oleh js/app.js -->
+          </div>
+          <button type="button" id="btn-add-experience" class="btn btn-secondary btn-sm" style="align-self: flex-start;">
+            <span data-i18n="fields.addExperienceBtn">+ Tambah Pengalaman Kerja</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Bagian Proyek & Organisasi (Prioritas untuk Fresh Graduate, Opsional untuk Profesional) -->
+      <div class="form-section-box editor-section" data-wizard-step="2" id="box-projects">
+        <div class="section-box-header">
+          <div>
+            <h2 class="section-box-title" data-i18n="sections.projectsTitle">Proyek & Portofolio</h2>
+            <div class="section-box-desc" data-i18n="sections.projectsHelper">Sangat disarankan untuk Fresh Graduate, IT/Engineering, Data, Desain, atau Pelamar Pindah Jalur Karir.</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div id="projects-repeatable-list" class="repeatable-list"></div>
+          <button type="button" id="btn-add-project" class="btn btn-secondary btn-sm" style="align-self: flex-start;">
+            <span data-i18n="fields.addProjectBtn">+ Tambah Proyek / Portofolio</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="form-section-box editor-section" data-wizard-step="2" id="box-organizations">
+        <div class="section-box-header">
+          <div>
+            <h2 class="section-box-title" data-i18n="sections.organizationsTitle">Pengalaman Organisasi & Kepemimpinan</h2>
+            <div class="section-box-desc" data-i18n="sections.organizationsHelper">Menunjukkan inisiatif, kerja tim, dan kepemimpinan (Sangat bernilai untuk Fresh Graduate).</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div id="organizations-repeatable-list" class="repeatable-list"></div>
+          <button type="button" id="btn-add-organization" class="btn btn-secondary btn-sm" style="align-self: flex-start;">
+            <span data-i18n="fields.addOrgBtn">+ Tambah Pengalaman Organisasi</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ==================================================================
+           LANGKAH 3: PENDIDIKAN & SERTIFIKASI
+           ================================================================== -->
+      <div class="form-section-box editor-section" data-wizard-step="3">
+        <div class="section-box-header">
+          <div>
+            <h2 class="section-box-title" data-i18n="sections.educationTitle">Pendidikan</h2>
+            <div class="section-box-desc" data-i18n="sections.educationHelper">Cantumkan pendidikan terakhir atau yang sedang ditempuh beserta IPK (jika ≥ 3.00) dan fokus studi.</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div id="education-repeatable-list" class="repeatable-list"></div>
+          <button type="button" id="btn-add-education" class="btn btn-secondary btn-sm" style="align-self: flex-start;">
+            <span data-i18n="fields.addEducationBtn">+ Tambah Pendidikan</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="form-section-box editor-section" data-wizard-step="3" id="box-certifications">
+        <div class="section-box-header">
+          <div>
+            <h2 class="section-box-title" data-i18n="sections.certificationsTitle">Sertifikasi & Pelatihan</h2>
+            <div class="section-box-desc" data-i18n="sections.certificationsHelper">Masukkan sertifikasi profesi, lisensi resmi, atau bootcamp relevan.</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div id="certifications-repeatable-list" class="repeatable-list"></div>
+          <button type="button" id="btn-add-certification" class="btn btn-secondary btn-sm" style="align-self: flex-start;">
+            <span data-i18n="fields.addCertBtn">+ Tambah Sertifikasi</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- ==================================================================
+           LANGKAH 4: KEAHLIAN (SKILLS)
+           ================================================================== -->
+      <div class="form-section-box editor-section" data-wizard-step="4">
+        <div class="section-box-header">
+          <div>
+            <h2 class="section-box-title" data-i18n="sections.skillsTitle">Keahlian (Skills)</h2>
+            <div class="section-box-desc" data-i18n="sections.skillsHelper">Pisahkan dengan koma. Gunakan kata kunci spesifik sesuai deskripsi pekerjaan yang dilamar (tanpa bar persentase/bintang).</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="form-group">
+            <label class="form-label" for="skills-technical"><span data-i18n="fields.skillsTech">Keahlian Teknis (Hard Skills / Bidang Utama)</span> <span class="required">*</span></label>
+            <input type="text" id="skills-technical" class="form-input" placeholder="Contoh: Analisis Data, SQL, Python, Pemodelan Keuangan, SEO" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="skills-tools"><span data-i18n="fields.skillsTools">Perangkat Lunak & Alat (Tools / Software)</span> <span class="required">*</span></label>
+            <input type="text" id="skills-tools" class="form-input" placeholder="Contoh: Microsoft Excel, Power BI, Git, Postman, Google Analytics" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="skills-soft" data-i18n="fields.skillsSoft">Keterampilan Interpersonal (Soft Skills)</label>
+            <input type="text" id="skills-soft" class="form-input" placeholder="Contoh: Kepemimpinan Tim, Negosiasi, Pemecahan Masalah, Komunikasi Lintas Fungsi" />
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="skills-languages" data-i18n="fields.skillsLang">Bahasa yang Dikuasai</label>
+            <input type="text" id="skills-languages" class="form-input" placeholder="Contoh: Bahasa Indonesia (Penutur Asli), Bahasa Inggris (Profesional / TOEFL 580)" />
+          </div>
+        </div>
+      </div>
+
+      <!-- ==================================================================
+           LANGKAH 5: FINALISASI, BAHASA CV, RELEVANSI LOWONGAN, & ATUR BAGIAN
+           ================================================================== -->
+      <div class="form-section-box editor-section" data-wizard-step="5" id="jd-matcher-box">
+        <div class="section-box-header">
+          <div>
+            <h2 class="section-box-title" data-i18n="sections.jdMatcherTitle">Pencocok Kata Kunci Deskripsi Lowongan (Lokal)</h2>
+            <div class="section-box-desc" data-i18n="sections.jdMatcherHelper">Tempel teks kualifikasi dari lowongan kerja untuk memeriksa kata kunci yang sudah ada atau belum tertulis di CV Anda. Analisis berjalan 100% di browser tanpa mengirim data keluar.</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <div class="form-group">
+            <label class="form-label" for="jd-input-textarea" data-i18n="jdMatcher.inputLabel">Deskripsi / Kualifikasi Lowongan Kerja</label>
+            <textarea id="jd-input-textarea" class="form-textarea" rows="4" placeholder="Tempel kualifikasi lowongan di sini (contoh: Membutuhkan Data Analyst yang menguasai SQL, Python, Looker Studio, eksperimen A/B testing, dan pelaporan KPI)..."></textarea>
+            <div style="display: flex; justify-content: flex-end; margin-top: 6px;">
+              <button type="button" id="btn-clear-jd" class="btn btn-subtle btn-sm" data-i18n="jdMatcher.clearBtn">Bersihkan Teks Lowongan</button>
+            </div>
+          </div>
+          <div id="jd-match-results" class="jd-match-results">
+            <!-- Diisi otomatis oleh js/app.js -->
+          </div>
+        </div>
+      </div>
+
+      <div class="form-section-box editor-section" data-wizard-step="5">
+        <div class="section-box-header">
+          <div>
+            <h2 class="section-box-title" data-i18n="sections.settingsTitle">Pengaturan Urutan Bagian, Bahasa CV & Tipografi</h2>
+            <div class="section-box-desc" data-i18n="settings.sectionOrderHelper">Gunakan tombol ↑ / ↓ untuk mengubah urutan, atau hilangkan centang untuk menyembunyikan bagian opsional dari pratinjau & PDF.</div>
+          </div>
+        </div>
+        <div class="section-body">
+          <!-- Pemilih Bahasa Dokumen CV (CV Language per Versi) -->
+          <div class="form-group" style="margin-bottom: 14px; padding: 10px 12px; background: #f8fafc; border: 1px solid var(--border-color); border-radius: 8px;">
+            <label class="form-label" for="select-document-language" data-i18n="settings.cvLanguageLabel">Bahasa Dokumen CV (CV Language)</label>
+            <select id="select-document-language" class="form-select">
+              <option value="id">Bahasa Indonesia (ID)</option>
+              <option value="en">English (EN)</option>
+            </select>
+            <div id="cv-language-helper" class="form-helper" style="margin-top: 4px;" data-i18n="settings.cvLanguageHelper">
+              Bahasa CV mengubah heading dan panduan. Isi yang Anda tulis tidak diterjemahkan otomatis.
+            </div>
+          </div>
+
+          <div style="margin-bottom: 10px;">
+            <label class="form-label" style="margin-bottom: 6px;" data-i18n="settings.presetOrderLabel">Preset Urutan Cepat</label>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button type="button" id="btn-preset-fresh-order" class="btn btn-secondary btn-sm" data-i18n="settings.presetFreshBtn">
+                🎓 Urutan Fresh Graduate
+              </button>
+              <button type="button" id="btn-preset-exp-order" class="btn btn-secondary btn-sm" data-i18n="settings.presetExpBtn">
+                💼 Urutan Berpengalaman
+              </button>
+            </div>
+          </div>
+
+          <!-- Daftar Interaktif Pengelolaan Bagian -->
+          <div id="section-order-list" class="section-order-list" aria-label="Pengaturan urutan dan visibilitas bagian CV">
+            <!-- Diisi dinamis oleh js/app.js -->
+          </div>
+
+          <div class="form-grid" style="margin-top: 12px; border-top: 1px solid var(--border-color); padding-top: 12px;">
+            <div class="form-group">
+              <label class="form-label" for="setting-font-family" data-i18n="settings.fontFamilyLabel">Jenis Huruf (Font Standar ATS)</label>
+              <select id="setting-font-family" class="form-select">
+                <option value="Calibri, Arial, sans-serif">Calibri (ATS Default)</option>
+                <option value="Arial, Helvetica, sans-serif">Arial (Clean Sans)</option>
+                <option value="Georgia, 'Times New Roman', serif">Georgia (Formal Serif)</option>
+                <option value="'Times New Roman', Times, serif">Times New Roman (Traditional)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label" for="setting-font-size" data-i18n="settings.fontSizeLabel">Ukuran Font Dasar</label>
+              <select id="setting-font-size" class="form-select">
+                <option value="10pt" data-i18n="settings.fontSizeCompact">10 pt (Padat - Muat Banyak)</option>
+                <option value="10.5pt" selected data-i18n="settings.fontSizeStandard">10.5 pt (Standar Ideal)</option>
+                <option value="11pt" data-i18n="settings.fontSizeLarge">11 pt (Longgar - Mudah Dibaca)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer Navigasi Langkah Wizard -->
+      <div class="wizard-footer-nav" id="wizard-footer-nav">
+        <button type="button" id="btn-wizard-prev" class="btn btn-secondary btn-sm" data-i18n="wizard.prevBtn">
+          ← Sebelumnya
+        </button>
+        <span id="wizard-step-indicator" class="wizard-step-counter">Langkah 1 dari 5</span>
+        <button type="button" id="btn-wizard-next" class="btn btn-primary btn-sm" data-i18n="wizard.nextBtn">
+          Lanjut →
+        </button>
+      </div>
+
+    </aside>
+
+    <!-- ==================================================================
+         Kolom Kanan: Pratinjau CV Langsung (A4 Live Preview)
+         ================================================================== -->
+    <section class="preview-pane" id="preview-pane">
+      
+      <!-- Toolbar Atas Pratinjau (Bahasa CV, Zoom & Jumlah Halaman) -->
+      <div class="preview-toolbar no-print">
+        <div class="preview-title-group">
+          <span class="preview-title" data-i18n="preview.liveIndicator">Pratinjau Kertas A4 (Single-Column ATS)</span>
+          <span id="preview-page-count" class="page-count-badge" aria-live="polite">Estimasi: 1 Halaman A4</span>
+        </div>
+        <div class="preview-controls">
+          <select id="select-preview-doc-language" class="track-select" aria-label="Bahasa Dokumen CV" title="Bahasa Dokumen CV (CV Language)" style="font-size: 0.75rem; padding: 3px 6px;">
+            <option value="id">CV: ID</option>
+            <option value="en">CV: EN</option>
+          </select>
+          <div class="zoom-btn-group" role="group" aria-label="Kontrol ukuran tampilan pratinjau">
+            <button type="button" id="btn-zoom-fit" class="btn-zoom active" data-zoom="fit" data-i18n="preview.zoomFit">Fit</button>
+            <button type="button" id="btn-zoom-90" class="btn-zoom" data-zoom="0.9" data-i18n="preview.zoom90">90%</button>
+            <button type="button" id="btn-zoom-100" class="btn-zoom" data-zoom="1" data-i18n="preview.zoom100">100%</button>
+          </div>
+          <button type="button" id="btn-preview-download-pdf" class="btn btn-primary btn-sm">
+            <span data-i18n="preview.downloadPdfShort">🖨️ PDF</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Wrapper Lembar Kertas A4 -->
+      <div class="a4-preview-wrapper" id="a4-preview-wrapper">
+        <article id="cv-live-document" class="cv-document" lang="id" aria-label="Pratinjau Dokumen CV ATS">
+          <!-- Konten CV dirender dinamis di sini -->
+        </article>
+      </div>
+
+      <!-- Bar Mengambang Pratinjau Fokus Mobile -->
+      <div class="mobile-preview-floating-bar no-print">
+        <button type="button" id="btn-mobile-back-edit" class="btn btn-secondary">
+          <span data-i18n="mobileTabs.backToEdit">← Kembali Mengedit</span>
+        </button>
+        <button type="button" id="btn-mobile-export-pdf" class="btn btn-primary">
+          <span data-i18n="mobileTabs.exportPdf">🖨️ Unduh PDF</span>
+        </button>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- ====================================================================
+       Modals (Aksesibel dengan role="dialog", aria-modal, Escape & Focus Trap)
+       ==================================================================== -->
+
+  <!-- Modal 1: Pemilihan Data Contoh (Fiktif) -->
+  <div id="modal-sample-picker" class="modal-overlay no-print" role="dialog" aria-modal="true" aria-labelledby="modal-sample-title" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modal-sample-title" class="modal-title" data-i18n="modals.sampleTitle">📋 Pilih Data Contoh CV Fiktif</h3>
+        <button type="button" class="btn-subtle modal-close-trigger" aria-label="Tutup dialog">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-top: 0;" data-i18n="modals.sampleDesc">Memuat data contoh akan mengganti isi formulir Anda saat ini. Bahasa data contoh mengikuti pengaturan Bahasa CV aktif.</p>
+        <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 14px;">
+          <div class="sample-option-card">
+            <strong style="color: var(--primary); font-size: 0.95rem;" data-i18n="modals.sampleExpTitle">Senior Software Engineer (Pengalaman 5+ Tahun)</strong>
+            <p style="margin: 4px 0 10px 0; font-size: 0.825rem; color: var(--text-secondary);" data-i18n="modals.sampleExpDesc">
+              Cocok untuk pelamar yang sudah memiliki riwayat kerja purnawaktu dan ingin menonjolkan metrik pencapaian.
+            </p>
+            <button type="button" id="btn-pick-experienced" class="btn btn-primary btn-sm" data-i18n="modals.sampleExpBtn">Gunakan Contoh Profesional</button>
+          </div>
+
+          <div class="sample-option-card">
+            <strong style="color: var(--primary); font-size: 0.95rem;" data-i18n="modals.sampleFreshTitle">Lulusan Baru S1 Manajemen Bisnis & Organisasi</strong>
+            <p style="margin: 4px 0 10px 0; font-size: 0.825rem; color: var(--text-secondary);" data-i18n="modals.sampleFreshDesc">
+              Cocok untuk mahasiswa tingkat akhir atau lulusan baru dengan fokus pendidikan, magang, proyek, dan organisasi.
+            </p>
+            <button type="button" id="btn-pick-freshgrad" class="btn btn-secondary btn-sm" data-i18n="modals.sampleFreshBtn">Gunakan Contoh Fresh Graduate</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close-trigger" data-i18n="modals.closeBtn">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 2: Konfirmasi Kosongkan Formulir -->
+  <div id="modal-confirm-reset" class="modal-overlay no-print" role="dialog" aria-modal="true" aria-labelledby="modal-reset-title" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modal-reset-title" class="modal-title" data-i18n="modals.resetTitle">⚠️ Kosongkan Seluruh Formulir?</h3>
+        <button type="button" class="btn-subtle modal-close-trigger" aria-label="Tutup dialog">✕</button>
+      </div>
+      <div class="modal-body">
+        <p data-i18n="modals.resetDesc">Seluruh data pada versi CV yang sedang aktif akan dikosongkan. Pastikan Anda telah mengunduh Backup JSON jika masih membutuhkan data ini.</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close-trigger" data-i18n="modals.cancelBtn">Batal</button>
+        <button type="button" id="btn-confirm-reset-action" class="btn btn-primary" style="background-color: var(--danger); border-color: var(--danger);" data-i18n="modals.confirmResetBtn">Ya, Kosongkan Semua</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 3: Pemeriksaan Pra-Ekspor & Panduan Cetak PDF -->
+  <div id="modal-print-guide" class="modal-overlay no-print" role="dialog" aria-modal="true" aria-labelledby="modal-print-title" style="display: none;">
+    <div class="modal-card modal-card-wide">
+      <div class="modal-header">
+        <h3 id="modal-print-title" class="modal-title" data-i18n="modals.printTitle">🖨️ Pemeriksaan Pra-Ekspor & Panduan Cetak PDF</h3>
+        <button type="button" class="btn-subtle modal-close-trigger" aria-label="Tutup dialog">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-top: 0; font-size: 0.85rem;" data-i18n="modals.printDesc">Periksa ringkasan kesiapan dokumen Anda di bawah ini sebelum menyimpan sebagai PDF A4:</p>
+        <!-- Ringkasan Diagnostik Pra-Ekspor -->
+        <div id="pre-export-summary-box" class="pre-export-summary-box">
+          <!-- Diisi otomatis oleh js/app.js sebelum cetak -->
+        </div>
+
+        <div class="print-instructions-box">
+          <ol style="padding-left: 20px; margin: 8px 0 0 0; display: flex; flex-direction: column; gap: 6px; font-size: 0.825rem;">
+            <li data-i18n-html="modals.printStep1"><strong>Destination / Tujuan:</strong> Pilih <code>Save as PDF</code> atau <code>Simpan sebagai PDF</code>.</li>
+            <li data-i18n-html="modals.printStep2"><strong>Paper Size / Ukuran Kertas:</strong> Pastikan berukuran <code>A4</code>.</li>
+            <li data-i18n-html="modals.printStep3"><strong>Margins / Margin:</strong> Pilih <code>Default</code> atau <code>None</code>.</li>
+            <li data-i18n-html="modals.printStep4"><strong>Headers and Footers:</strong> <strong>Hilangkan centang (Uncheck)</strong> opsi <em>Headers and footers</em> agar tanggal dan URL browser tidak ikut tercetak.</li>
+          </ol>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" id="btn-pre-export-fix" class="btn btn-secondary modal-close-trigger" data-i18n="modals.fixBeforePrintBtn">🔧 Kembali Memperbaiki</button>
+        <button type="button" id="btn-proceed-print" class="btn btn-primary" data-i18n="modals.proceedPrintBtn">🖨️ Lanjutkan Cetak / Simpan PDF</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal 4: Pengelolaan Beberapa Versi CV (Multi-Version CV Manager) -->
+  <div id="modal-versions-manager" class="modal-overlay no-print" role="dialog" aria-modal="true" aria-labelledby="modal-versions-title" style="display: none;">
+    <div class="modal-card modal-card-wide">
+      <div class="modal-header">
+        <h3 id="modal-versions-title" class="modal-title" data-i18n="modals.versionsTitle">🗂️ Kelola Versi CV Lokal</h3>
+        <button type="button" class="btn-subtle modal-close-trigger" aria-label="Tutup dialog">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin-top: 0; font-size: 0.85rem; color: var(--text-secondary);" data-i18n="modals.versionsDesc">
+          Buat beberapa versi CV untuk posisi atau bahasa yang berbeda (misal: versi Bahasa Indonesia & versi English).
+        </p>
+        <div class="new-version-form-row" style="display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+          <input type="text" id="input-new-version-name" class="form-input" style="flex: 1 1 200px;" placeholder="Nama versi baru (contoh: CV English - Product Manager)" aria-label="Nama versi CV baru" />
+          <select id="select-new-version-doc-lang" class="form-select" style="flex: 0 0 auto; width: auto; font-size: 0.8rem;" aria-label="Bahasa CV untuk versi baru">
+            <option value="match" data-i18n="modals.newVersionLangSelf">Bahasa: Ikuti CV Saat Ini</option>
+            <option value="id" data-i18n="modals.newVersionLangId">Bahasa CV: Indonesia (ID)</option>
+            <option value="en" data-i18n="modals.newVersionLangEn">Bahasa CV: English (EN)</option>
+          </select>
+          <button type="button" id="btn-create-empty-version" class="btn btn-secondary btn-sm" data-i18n="modals.createEmptyBtn">+ Buat Kosong</button>
+          <button type="button" id="btn-duplicate-current-version" class="btn btn-primary btn-sm" data-i18n="modals.duplicateCurrentBtn">📋 Duplikasi CV Saat Ini</button>
+        </div>
+        <div id="versions-list-container" class="versions-list-container">
+          <!-- Diisi dinamis oleh js/app.js -->
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close-trigger" data-i18n="modals.closeBtn">Tutup</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Wadah Notifikasi Toast & Pengumuman Screen Reader -->
+  <div id="toast-container" class="toast-container no-print" role="status" aria-live="polite"></div>
+  <div id="a11y-live-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+
+  <!-- Logic Scripts -->
+  <script type="module" src="js/app.js"></script>
+
+</body>
+</html>
