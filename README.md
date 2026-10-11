@@ -35,7 +35,7 @@ Dirancang khusus untuk pencari kerja—mulai dari **Fresh Graduate (Lulusan Baru
 
 6. **Dukungan Bilingual Penuh (Indonesian & English)**:
    - Pemisahan independen antara **Bahasa Antarmuka Aplikasi** (`interfaceLanguage`: ID/EN) dan **Bahasa Dokumen CV** (`documentLanguage`: ID/EN).
-   - Katalog terjemahan setara 1:1 (373 pasangan key) tanpa me-reload halaman.
+   - Katalog terjemahan setara 1:1 (375 pasangan key) tanpa me-reload halaman.
 
 7. **Penyimpanan Multi-Versi Lokal & Cadangan JSON**:
    - Otomatis tersimpan ke `localStorage` browser saat Anda mengetik (auto-save debounced).
@@ -58,6 +58,13 @@ Dirancang khusus untuk pencari kerja—mulai dari **Fresh Graduate (Lulusan Baru
 12. **Tanpa Ketergantungan Eksternal (Zero External Build Tooling)**:
     - Berjalan murni menggunakan standar web HTML5, CSS3, dan Vanilla JavaScript (ES Modules).
     - Tidak memerlukan instalasi package npm atau koneksi internet eksternal saat digunakan.
+
+13. **Integritas Data Client-Side & Sinkronisasi Multi-Tab Tangguh (Hardened V0.2)**:
+    - Rollback multi-key atomik (`VERSIONS_KEY`, `ACTIVE_VERSION_KEY`, `STORAGE_KEY`) dengan penanganan kuota penuh dan error recovery terisolasi.
+    - Pembangkit timestamp kompensasi *strictly monotonic* (`getNextMonotonicIso`) untuk mengeliminasi tabrakan rollback ganda dan false-event filter pada tab lain.
+    - Sinkronisasi lintas-tab granular yang membedakan tab *idle* dari tab *active typing* dengan pelacakan field *dirty*.
+    - Guard skema maju (`schemaVersion > 2`) untuk mencegah kerusakan data dari versi tak didukung.
+    - Cache busting menyeluruh (`?v=0.2.0`) pada graf modul ES internal.
 
 ---
 
@@ -88,6 +95,9 @@ python tests/verify.py
 
 # 3. Jalankan suite pengujian end-to-end browser, aksesibilitas, bilingual, mobile 390x844, dan PDF A4
 python tests/test_fixes.py
+
+# 4. Jalankan suite pengujian regresi audit, integritas data, dan sinkronisasi multi-tab
+python tests/test_audit_fixes.py
 ```
 
 ---
@@ -96,31 +106,49 @@ python tests/test_fixes.py
 
 ```
 CV Builder/
-├── index.html              # Halaman utama aplikasi (Editor Wizard + Live Preview + Modals)
-├── server.py               # Server HTTP statis lokal berbasis modul Python standard
-├── Dockerfile              # Docker container Nginx unprivileged Alpine untuk produksi
-├── docker-compose.vps.yml  # Orkestrasi Docker VPS via proxy-network
-├── requirements-dev.txt    # Pin dependencies pengujian Playwright & Python
-├── README.md               # Dokumentasi teknis & panduan penggunaan
+├── .github/
+│   └── workflows/
+│       └── deploy.yml          # Otomasi CI testing & CD deployment SSH ke VPS produksi
+├── index.html                  # Halaman utama aplikasi (Editor Wizard + Live Preview + Modals)
+├── server.py                   # Server HTTP statis lokal berbasis modul Python standard
+├── Dockerfile                  # Docker container Nginx unprivileged Alpine untuk produksi
+├── docker-compose.vps.yml      # Orkestrasi Docker VPS via proxy-network
+├── requirements-dev.txt        # Pin dependencies pengujian Playwright & Python
+├── README.md                   # Dokumentasi teknis & panduan penggunaan
 ├── deploy/
-│   └── default.conf        # Konfigurasi Nginx produksi (hardening header, CSP, gzip, cache)
-├── docs/                   # Spesifikasi arsitektur, PRD, proposal bilingual, & laporan QA
+│   └── default.conf            # Konfigurasi Nginx produksi (hardening header, CSP, gzip, cache)
+├── docs/                       # Spesifikasi arsitektur, PRD, proposal bilingual, audit & review
 ├── css/
-│   ├── style.css           # Desain antarmuka editor, cards, modals, dan layout responsif
-│   └── cv-ats.css          # Desain dokumen CV berstandar ATS (Layar & @media print)
+│   ├── style.css               # Desain antarmuka editor, cards, modals, dan layout responsif
+│   └── cv-ats.css              # Desain dokumen CV berstandar ATS (Layar & @media print)
 ├── js/
-│   ├── app.js              # Pengendali logika utama, DOM binding, wizard, & event handlers
-│   ├── ats-checker.js      # Evaluasi kelengkapan, validasi inline, JD matcher, & diagnostik PDF
-│   ├── data.js             # Model data awal & 4 preset contoh fiktif (ID/EN Pro & Fresh Grad)
-│   ├── storage.js          # Manajemen LocalStorage multi-versi & Impor/Ekspor berkas JSON
-│   ├── i18n.js             # Engine lokalisasi bilingual (ID/EN)
+│   ├── app.js                  # Pengendali logika utama, DOM binding, wizard, & event handlers
+│   ├── ats-checker.js          # Evaluasi kelengkapan, validasi inline, JD matcher, & diagnostik PDF
+│   ├── data.js                 # Model data awal & 4 preset contoh fiktif (ID/EN Pro & Fresh Grad)
+│   ├── storage.js              # Manajemen LocalStorage multi-versi & Impor/Ekspor berkas JSON
+│   ├── i18n.js                 # Engine lokalisasi bilingual (ID/EN)
 │   └── locales/
-│       ├── id.js           # Katalog teks Bahasa Indonesia (373 keys)
-│       └── en.js           # Katalog teks English (373 keys)
+│       ├── id.js               # Katalog teks Bahasa Indonesia (375 keys)
+│       └── en.js               # Katalog teks English (375 keys)
 └── tests/
-    ├── verify.py           # Pemeriksaan statis, integritas file, HTML, CSS, & HTTP response
-    └── test_fixes.py       # Pengujian browser end-to-end nyata (Playwright Chromium)
+    ├── verify.py               # Pemeriksaan statis, integritas file, HTML, CSS, & HTTP response
+    ├── test_fixes.py           # Pengujian browser end-to-end nyata (Playwright Chromium)
+    └── test_audit_fixes.py     # Pengujian regresi audit kesiapan v0.2, integritas data & multi-tab
 ```
+
+---
+
+## 🌐 Deployment Produksi & CI/CD
+
+- **URL Publik Produksi**: [https://cv.digitalneeds.my.id/](https://cv.digitalneeds.my.id/)
+- **Arsitektur Server**:
+  - Image: `nginxinc/nginx-unprivileged:1.27-alpine`
+  - Keamanan: Filesystem read-only (`read_only: true`), `cap_drop: ALL`, unprivileged user (UID `101`), non-root execution.
+  - Jaringan: Terhubung ke internal Docker bridge `proxy-network` tanpa publikasi port langsung ke internet publik.
+  - Reverse Proxy: Ditangani oleh Caddy v2 dengan HTTPS otomatis (Cloudflare Anycast SSL Full) dan direktif keamanan ketat (`HSTS`, `CSP`, `X-Content-Type-Options: nosniff`).
+- **Otomasi CI/CD Pipeline (GitHub Actions)**:
+  - Setiap push ke cabang `main` secara otomatis memicu job **Verify Static & Browser Suite** (`verify.py`, `test_fixes.py`, `test_audit_fixes.py`).
+  - Setelah seluruh pengujian berhasil (`green sheet`), job **Deploy to Production VPS (vps-main)** melakukan deploy tanpa downtime via SSH, pembaruan kontainer, bounded 30s healthcheck, reload Caddy, dan smoke test publik.
 
 ---
 
@@ -156,6 +184,7 @@ CV Builder/
 - [Rencana deployment VPS](docs/VPS_DEPLOYMENT_PLAN.md)
 - [Audit kesiapan V0.2 Job Tracker — 9 Oktober 2026](docs/AUDIT_READINESS_V0.2_2026-10-09.md)
 - [Implementasi temuan audit V0.2 — 9 Oktober 2026](docs/AUDIT_IMPLEMENTATION_V0.2.md)
+- [Review implementasi audit V0.2 Codex — 10 Oktober 2026](docs/REVIEW_AG_2026-10-10.md)
 
 ## Aturan Khusus Proyek
 
