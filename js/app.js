@@ -15,12 +15,15 @@
 import {
   defaultEmptyCV,
   getSampleDataset
-} from "./data.js";
+} from "./data.js?v=0.2.0";
 import {
   saveCVToStorage,
   loadCVFromStorage,
   clearCVStorage,
+  resetActiveCVVersion,
   exportCVAsJSON,
+  exportFullBackupJSON,
+  restoreFullBackup,
   importCVFromJSON,
   hasAnyCVContent,
   mergeWithDefaults,
@@ -30,8 +33,12 @@ import {
   setActiveVersionId,
   createNewCVVersion,
   renameCVVersion,
-  deleteCVVersion
-} from "./storage.js";
+  deleteCVVersion,
+  STORAGE_KEY,
+  VERSIONS_KEY,
+  ACTIVE_VERSION_KEY,
+  getLastSavedTimestamp
+} from "./storage.js?v=0.2.0";
 import {
   analyzeCVCompleteness,
   analyzeJobDescriptionMatch,
@@ -41,7 +48,7 @@ import {
   isValidPhone,
   isValidUrl,
   validateYearRange
-} from "./ats-checker.js";
+} from "./ats-checker.js?v=0.2.0";
 import {
   initInterfaceLanguage,
   getInterfaceLanguage,
@@ -51,11 +58,15 @@ import {
   getDocumentCopy,
   formatSavedTime,
   verifyCatalogKeyParity
-} from "./i18n.js";
+} from "./i18n.js?v=0.2.0";
 
 // State global aplikasi
 let cvState = null;
+let currentVersionId = null;
+let lastAppliedDataTimestamp = null;
 let saveDebounceTimer = null;
+let isStateDirty = false;
+const dirtyFields = new Set();
 let currentWizardStep = 1;
 let editorViewMode = "wizard"; // "wizard" | "all"
 let lastFocusedElement = null;
@@ -116,20 +127,33 @@ function initApp() {
   setupStarterBannerEvents();
   setupCorruptAndErrorEvents();
   setupKeyboardAccessibility();
+  setupCrossTabSync();
+  setupPageLifecycleFlush();
 
   // 4. Terapkan terjemahan UI & render formulir editor
   const uiLangSelect = document.getElementById("select-interface-language");
   if (uiLangSelect) uiLangSelect.value = initialUiLang;
 
   applyInterfaceTranslations();
-  renderAllFormFields();
-  updateWizardUI();
-  updateActiveVersionPill();
+  try {
+    renderAllFormFields();
+    updateWizardUI();
+    currentVersionId = getActiveVersionId();
+    updateActiveVersionPill();
 
-  // 5. Sinkronisasi tampilan pratinjau live & kesiapan
-  updateLivePreview();
-  updateCompletenessWidget();
-  updateJobDescriptionMatcherUI();
+    // 5. Sinkronisasi tampilan pratinjau live & kesiapan
+    updateLivePreview();
+    updateCompletenessWidget();
+    updateJobDescriptionMatcherUI();
+  } catch (renderError) {
+    console.error("Gagal merender data draft tersimpan saat startup:", renderError);
+    cvState = JSON.parse(JSON.stringify(defaultEmptyCV));
+    showCorruptStorageAlert();
+    renderAllFormFields();
+    updateWizardUI();
+    updateActiveVersionPill();
+    updateLivePreview();
+  }
 
   if (storageStatus === "corrupt") {
     showToast(t("toasts.corruptLoaded"));
@@ -170,6 +194,7 @@ function setupLanguageEvents() {
     const nextDocLang = normalizeLanguage(rawVal);
     if (cvState.documentLanguage === nextDocLang) return;
     cvState.documentLanguage = nextDocLang;
+    dirtyFields.add("documentLanguage");
 
     if (docLangSelect) docLangSelect.value = nextDocLang;
     if (previewDocLangSelect) previewDocLangSelect.value = nextDocLang;
@@ -391,6 +416,20 @@ function setupHeaderEvents() {
     });
   }
 
+  const btnExportFullBackup = document.getElementById("btn-export-full-backup");
+  if (btnExportFullBackup) {
+    btnExportFullBackup.addEventListener("click", () => {
+      closeHeaderDropdown();
+      flushAutoSave();
+      const exportOk = exportFullBackupJSON("backup_ats_cv_builder_lengkap.json", cvState, currentVersionId);
+      if (exportOk) {
+        showToast(t("toasts.backupDownloaded"));
+      } else {
+        showToast(t("status.saveError"));
+      }
+    });
+  }
+
   const fileInput = document.getElementById("input-import-json");
   const btnImportTrigger = document.getElementById("btn-import-json-trigger");
   if (btnImportTrigger && fileInput) {
@@ -403,15 +442,56 @@ function setupHeaderEvents() {
       if (!file) return;
       try {
         const imported = await importCVFromJSON(file);
-        cvState = mergeWithDefaults(imported, defaultEmptyCV);
-        saveCVToStorage(cvState);
-        hideCorruptStorageAlert();
-        applyDocumentPlaceholders();
-        renderAllFormFields();
-        updateLivePreview();
-        updateCompletenessWidget();
-        updateJobDescriptionMatcherUI();
-        showToast(t("toasts.jsonImported"));
+        if (imported && imported._isFullBackup) {
+          const restoredActive = restoreFullBackup(imported);
+          cvState = mergeWithDefaults(restoredActive, defaultEmptyCV);
+          currentVersionId = getActiveVersionId();
+          lastAppliedDataTimestamp = null;
+          isStateDirty = false;
+          dirtyFields.clear();
+          hideCorruptStorageAlert();
+          applyDocumentPlaceholders();
+          renderAllFormFields();
+          updateLivePreview();
+          updateCompletenessWidget();
+          updateJobDescriptionMatcherUI();
+          updateActiveVersionPill();
+          renderVersionsModalList();
+          showToast(t("toasts.backupRestored"));
+        } else {
+          const candidateState = mergeWithDefaults(imported, defaultEmptyCV);
+          cvState = candidateState;
+          hideCorruptStorageAlert();
+          applyDocumentPlaceholders();
+          renderAllFormFields();
+          updateLivePreview();
+          updateCompletenessWidget();
+          updateJobDescriptionMatcherUI();
+          updateActiveVersionPill();
+
+          const targetVerId = currentVersionId || getActiveVersionId();
+          const saveOk = saveCVToStorage(candidateState, targetVerId);
+          const statusEl = document.getElementById("save-status-text");
+          const btnBackupErr = document.getElementById("btn-backup-on-error");
+
+          if (saveOk) {
+            isStateDirty = false;
+            dirtyFields.clear();
+            lastAppliedDataTimestamp = getLastSavedTimestamp() || new Date().toISOString();
+            if (btnBackupErr) btnBackupErr.style.display = "none";
+            if (statusEl) {
+              const timeStr = formatSavedTime(new Date(), getInterfaceLanguage());
+              statusEl.textContent = t("status.savedAt", { time: timeStr });
+            }
+            showToast(t("toasts.jsonImported"));
+          } else {
+            isStateDirty = true;
+            dirtyFields.add("import");
+            if (btnBackupErr) btnBackupErr.style.display = "inline-flex";
+            if (statusEl) statusEl.textContent = t("status.saveError");
+            showToast(t("status.saveError"));
+          }
+        }
       } catch (err) {
         alert("Error: " + err.message);
       } finally {
@@ -507,6 +587,8 @@ function setupWizardAndCareerEvents() {
 
 function applyCareerTrack(track, announce = false) {
   cvState.careerTrack = track === "freshgrad" ? "freshgrad" : "experienced";
+  dirtyFields.add("careerTrack");
+  dirtyFields.add("sectionOrder");
   const careerSelect = document.getElementById("select-career-track");
   if (careerSelect) careerSelect.value = cvState.careerTrack;
 
@@ -804,6 +886,7 @@ function bindValidatedInput(id, initialVal, updateFn) {
   if (!el) return;
   el.value = initialVal || "";
   el.oninput = (e) => {
+    dirtyFields.add(id);
     updateFn(e.target.value);
     if (touchedFields.has(id)) {
       validateProfileField(id);
@@ -834,6 +917,8 @@ function renderSummaryForm() {
     updateCount();
 
     summaryEl.oninput = (e) => {
+      dirtyFields.add("summary-textarea");
+      dirtyFields.add("summary");
       cvState.summary = e.target.value;
       updateCount();
       triggerAutoSave();
@@ -950,30 +1035,38 @@ function renderExperienceList() {
       const currentCb = card.querySelector(".exp-current");
       const descInput = card.querySelector(".exp-desc");
 
+      const getItem = () => {
+        if (!cvState || !cvState.experience) return item;
+        return cvState.experience.find(it => it.id === item.id) || cvState.experience[index] || item;
+      };
+
       const checkPeriod = () => {
-        const res = validateYearRange(item.startDate, item.endDate, item.isCurrent);
+        const curItem = getItem();
+        const res = validateYearRange(curItem.startDate, curItem.endDate, curItem.isCurrent);
         if (periodErrEl) periodErrEl.textContent = res.valid ? "" : res.message;
       };
 
-      roleInput.oninput = (e) => { item.role = e.target.value; triggerAutoSave(); };
-      companyInput.oninput = (e) => { item.company = e.target.value; triggerAutoSave(); };
-      locationInput.oninput = (e) => { item.location = e.target.value; triggerAutoSave(); };
-      startInput.oninput = (e) => { item.startDate = e.target.value; checkPeriod(); triggerAutoSave(); };
-      endInput.oninput = (e) => { item.endDate = e.target.value; checkPeriod(); triggerAutoSave(); };
+      roleInput.oninput = (e) => { getItem().role = e.target.value; dirtyFields.add("experience"); triggerAutoSave(); };
+      companyInput.oninput = (e) => { getItem().company = e.target.value; dirtyFields.add("experience"); triggerAutoSave(); };
+      locationInput.oninput = (e) => { getItem().location = e.target.value; dirtyFields.add("experience"); triggerAutoSave(); };
+      startInput.oninput = (e) => { getItem().startDate = e.target.value; checkPeriod(); dirtyFields.add("experience"); triggerAutoSave(); };
+      endInput.oninput = (e) => { getItem().endDate = e.target.value; checkPeriod(); dirtyFields.add("experience"); triggerAutoSave(); };
       currentCb.onchange = (e) => {
-        item.isCurrent = e.target.checked;
+        const curItem = getItem();
+        curItem.isCurrent = e.target.checked;
         const presentWord = docCopy.presentLabel || "Sekarang";
-        if (item.isCurrent) {
-          item.endDate = presentWord;
+        if (curItem.isCurrent) {
+          curItem.endDate = presentWord;
           endInput.value = presentWord;
           endInput.disabled = true;
         } else {
           endInput.disabled = false;
         }
         checkPeriod();
+        dirtyFields.add("experience");
         triggerAutoSave();
       };
-      descInput.oninput = (e) => { item.description = e.target.value; triggerAutoSave(); };
+      descInput.oninput = (e) => { getItem().description = e.target.value; dirtyFields.add("experience"); triggerAutoSave(); };
 
       const btnToggleBB = card.querySelector(".btn-toggle-bullet-builder");
       const bbBody = card.querySelector(".bullet-builder-body");
@@ -997,21 +1090,24 @@ function renderExperienceList() {
           }
           const parts = [act, met, imp].filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
           const bulletLine = `• ${parts.endsWith(".") ? parts : parts + "."}`;
-          item.description = item.description && item.description.trim()
-            ? `${item.description.trim()}\n${bulletLine}`
+          const curItem = getItem();
+          curItem.description = curItem.description && curItem.description.trim()
+            ? `${curItem.description.trim()}\n${bulletLine}`
             : bulletLine;
-          descInput.value = item.description;
+          descInput.value = curItem.description;
           card.querySelector(".bb-action").value = "";
           card.querySelector(".bb-method").value = "";
           card.querySelector(".bb-impact").value = "";
+          dirtyFields.add("experience");
           triggerAutoSave();
           showToast(t("bulletBuilder.addedToast"));
         };
       }
 
-      card.querySelector(".btn-move-up").onclick = () => moveItem(items, index, -1, renderExperienceList);
-      card.querySelector(".btn-move-down").onclick = () => moveItem(items, index, 1, renderExperienceList);
+      card.querySelector(".btn-move-up").onclick = () => { dirtyFields.add("experience"); moveItem(items, index, -1, renderExperienceList); };
+      card.querySelector(".btn-move-down").onclick = () => { dirtyFields.add("experience"); moveItem(items, index, 1, renderExperienceList); };
       card.querySelector(".btn-delete-item").onclick = () => {
+        dirtyFields.add("experience");
         items.splice(index, 1);
         renderExperienceList();
         triggerAutoSave();
@@ -1024,6 +1120,7 @@ function renderExperienceList() {
   const btnAdd = document.getElementById("btn-add-experience");
   if (btnAdd) {
     btnAdd.onclick = () => {
+      dirtyFields.add("experience");
       if (!cvState.experience) cvState.experience = [];
       cvState.experience.push({
         id: "exp-" + Date.now(),
@@ -1077,7 +1174,7 @@ function renderEducationList() {
           <div class="form-grid">
             <div class="form-group">
               <label for="${prefix}-inst" class="form-label">${escapeHTML(t("fields.eduInst"))} <span class="required">*</span></label>
-              <input type="text" id="${prefix}-inst" class="form-input edu-inst" value="${escapeAttr(item.institution || "")}" placeholder="${escapeAttr(ph.eduInst || "")}" />
+              <input type="text" id="${prefix}-inst" class="form-input edu-inst edu-institution" value="${escapeAttr(item.institution || "")}" placeholder="${escapeAttr(ph.eduInst || "")}" />
             </div>
             <div class="form-group">
               <label for="${prefix}-degree" class="form-label">${escapeHTML(t("fields.eduDegree"))} <span class="required">*</span></label>
@@ -1122,23 +1219,30 @@ function renderEducationList() {
       const gpaInput = card.querySelector(".edu-gpa");
       const descInput = card.querySelector(".edu-desc");
 
+      const getItem = () => {
+        if (!cvState || !cvState.education) return item;
+        return cvState.education.find(it => it.id === item.id) || cvState.education[index] || item;
+      };
+
       const checkPeriod = () => {
-        const res = validateYearRange(item.startDate, item.endDate, false);
+        const curItem = getItem();
+        const res = validateYearRange(curItem.startDate, curItem.endDate, false);
         if (periodErrEl) periodErrEl.textContent = res.valid ? "" : res.message;
       };
 
-      instInput.oninput = (e) => { item.institution = e.target.value; triggerAutoSave(); };
-      degreeInput.oninput = (e) => { item.degree = e.target.value; triggerAutoSave(); };
-      fieldInput.oninput = (e) => { item.field = e.target.value; triggerAutoSave(); };
-      locInput.oninput = (e) => { item.location = e.target.value; triggerAutoSave(); };
-      startInput.oninput = (e) => { item.startDate = e.target.value; checkPeriod(); triggerAutoSave(); };
-      endInput.oninput = (e) => { item.endDate = e.target.value; checkPeriod(); triggerAutoSave(); };
-      gpaInput.oninput = (e) => { item.gpa = e.target.value; triggerAutoSave(); };
-      descInput.oninput = (e) => { item.description = e.target.value; triggerAutoSave(); };
+      instInput.oninput = (e) => { getItem().institution = e.target.value; dirtyFields.add("education"); triggerAutoSave(); };
+      degreeInput.oninput = (e) => { getItem().degree = e.target.value; dirtyFields.add("education"); triggerAutoSave(); };
+      fieldInput.oninput = (e) => { getItem().field = e.target.value; dirtyFields.add("education"); triggerAutoSave(); };
+      locInput.oninput = (e) => { getItem().location = e.target.value; dirtyFields.add("education"); triggerAutoSave(); };
+      startInput.oninput = (e) => { getItem().startDate = e.target.value; checkPeriod(); dirtyFields.add("education"); triggerAutoSave(); };
+      endInput.oninput = (e) => { getItem().endDate = e.target.value; checkPeriod(); dirtyFields.add("education"); triggerAutoSave(); };
+      gpaInput.oninput = (e) => { getItem().gpa = e.target.value; dirtyFields.add("education"); triggerAutoSave(); };
+      descInput.oninput = (e) => { getItem().description = e.target.value; dirtyFields.add("education"); triggerAutoSave(); };
 
-      card.querySelector(".btn-move-up").onclick = () => moveItem(items, index, -1, renderEducationList);
-      card.querySelector(".btn-move-down").onclick = () => moveItem(items, index, 1, renderEducationList);
+      card.querySelector(".btn-move-up").onclick = () => { dirtyFields.add("education"); moveItem(items, index, -1, renderEducationList); };
+      card.querySelector(".btn-move-down").onclick = () => { dirtyFields.add("education"); moveItem(items, index, 1, renderEducationList); };
       card.querySelector(".btn-delete-item").onclick = () => {
+        dirtyFields.add("education");
         items.splice(index, 1);
         renderEducationList();
         triggerAutoSave();
@@ -1151,6 +1255,7 @@ function renderEducationList() {
   const btnAdd = document.getElementById("btn-add-education");
   if (btnAdd) {
     btnAdd.onclick = () => {
+      dirtyFields.add("education");
       if (!cvState.education) cvState.education = [];
       cvState.education.push({
         id: "edu-" + Date.now(),
@@ -1175,10 +1280,10 @@ function renderEducationList() {
 function renderSkillsForm() {
   if (!cvState.skills) cvState.skills = {};
   const s = cvState.skills;
-  bindInput("skills-technical", s.technical, (val) => { cvState.skills.technical = val; });
-  bindInput("skills-tools", s.tools, (val) => { cvState.skills.tools = val; });
-  bindInput("skills-soft", s.soft, (val) => { cvState.skills.soft = val; });
-  bindInput("skills-languages", s.languages, (val) => { cvState.skills.languages = val; });
+  bindInput("skills-technical", s.technical, (val) => { cvState.skills.technical = val; dirtyFields.add("skills"); });
+  bindInput("skills-tools", s.tools, (val) => { cvState.skills.tools = val; dirtyFields.add("skills"); });
+  bindInput("skills-soft", s.soft, (val) => { cvState.skills.soft = val; dirtyFields.add("skills"); });
+  bindInput("skills-languages", s.languages, (val) => { cvState.skills.languages = val; dirtyFields.add("skills"); });
 }
 
 /**
@@ -1237,15 +1342,21 @@ function renderProjectsList() {
         </div>
       `;
 
-      card.querySelector(".proj-title").oninput = (e) => { item.title = e.target.value; triggerAutoSave(); };
-      card.querySelector(".proj-role").oninput = (e) => { item.role = e.target.value; triggerAutoSave(); };
-      card.querySelector(".proj-tech").oninput = (e) => { item.tech = e.target.value; triggerAutoSave(); };
-      card.querySelector(".proj-link").oninput = (e) => { item.link = e.target.value; triggerAutoSave(); };
-      card.querySelector(".proj-desc").oninput = (e) => { item.description = e.target.value; triggerAutoSave(); };
+      const getItem = () => {
+        if (!cvState || !cvState.projects) return item;
+        return cvState.projects.find(it => it.id === item.id) || cvState.projects[index] || item;
+      };
 
-      card.querySelector(".btn-move-up").onclick = () => moveItem(items, index, -1, renderProjectsList);
-      card.querySelector(".btn-move-down").onclick = () => moveItem(items, index, 1, renderProjectsList);
+      card.querySelector(".proj-title").oninput = (e) => { getItem().title = e.target.value; dirtyFields.add("projects"); triggerAutoSave(); };
+      card.querySelector(".proj-role").oninput = (e) => { getItem().role = e.target.value; dirtyFields.add("projects"); triggerAutoSave(); };
+      card.querySelector(".proj-tech").oninput = (e) => { getItem().tech = e.target.value; dirtyFields.add("projects"); triggerAutoSave(); };
+      card.querySelector(".proj-link").oninput = (e) => { getItem().link = e.target.value; dirtyFields.add("projects"); triggerAutoSave(); };
+      card.querySelector(".proj-desc").oninput = (e) => { getItem().description = e.target.value; dirtyFields.add("projects"); triggerAutoSave(); };
+
+      card.querySelector(".btn-move-up").onclick = () => { dirtyFields.add("projects"); moveItem(items, index, -1, renderProjectsList); };
+      card.querySelector(".btn-move-down").onclick = () => { dirtyFields.add("projects"); moveItem(items, index, 1, renderProjectsList); };
       card.querySelector(".btn-delete-item").onclick = () => {
+        dirtyFields.add("projects");
         items.splice(index, 1);
         renderProjectsList();
         triggerAutoSave();
@@ -1258,6 +1369,7 @@ function renderProjectsList() {
   const btnAdd = document.getElementById("btn-add-project");
   if (btnAdd) {
     btnAdd.onclick = () => {
+      dirtyFields.add("projects");
       if (!cvState.projects) cvState.projects = [];
       cvState.projects.push({
         id: "proj-" + Date.now(),
@@ -1325,14 +1437,20 @@ function renderCertificationsList() {
         </div>
       `;
 
-      card.querySelector(".cert-name").oninput = (e) => { item.name = e.target.value; triggerAutoSave(); };
-      card.querySelector(".cert-issuer").oninput = (e) => { item.issuer = e.target.value; triggerAutoSave(); };
-      card.querySelector(".cert-year").oninput = (e) => { item.year = e.target.value; triggerAutoSave(); };
-      card.querySelector(".cert-url").oninput = (e) => { item.credentialUrl = e.target.value; triggerAutoSave(); };
+      const getItem = () => {
+        if (!cvState || !cvState.certifications) return item;
+        return cvState.certifications.find(it => it.id === item.id) || cvState.certifications[index] || item;
+      };
 
-      card.querySelector(".btn-move-up").onclick = () => moveItem(items, index, -1, renderCertificationsList);
-      card.querySelector(".btn-move-down").onclick = () => moveItem(items, index, 1, renderCertificationsList);
+      card.querySelector(".cert-name").oninput = (e) => { getItem().name = e.target.value; dirtyFields.add("certifications"); triggerAutoSave(); };
+      card.querySelector(".cert-issuer").oninput = (e) => { getItem().issuer = e.target.value; dirtyFields.add("certifications"); triggerAutoSave(); };
+      card.querySelector(".cert-year").oninput = (e) => { getItem().year = e.target.value; dirtyFields.add("certifications"); triggerAutoSave(); };
+      card.querySelector(".cert-url").oninput = (e) => { getItem().credentialUrl = e.target.value; dirtyFields.add("certifications"); triggerAutoSave(); };
+
+      card.querySelector(".btn-move-up").onclick = () => { dirtyFields.add("certifications"); moveItem(items, index, -1, renderCertificationsList); };
+      card.querySelector(".btn-move-down").onclick = () => { dirtyFields.add("certifications"); moveItem(items, index, 1, renderCertificationsList); };
       card.querySelector(".btn-delete-item").onclick = () => {
+        dirtyFields.add("certifications");
         items.splice(index, 1);
         renderCertificationsList();
         triggerAutoSave();
@@ -1345,6 +1463,7 @@ function renderCertificationsList() {
   const btnAdd = document.getElementById("btn-add-certification");
   if (btnAdd) {
     btnAdd.onclick = () => {
+      dirtyFields.add("certifications");
       if (!cvState.certifications) cvState.certifications = [];
       cvState.certifications.push({
         id: "cert-" + Date.now(),
@@ -1411,14 +1530,20 @@ function renderOrganizationsList() {
         </div>
       `;
 
-      card.querySelector(".org-name").oninput = (e) => { item.name = e.target.value; triggerAutoSave(); };
-      card.querySelector(".org-role").oninput = (e) => { item.role = e.target.value; triggerAutoSave(); };
-      card.querySelector(".org-period").oninput = (e) => { item.period = e.target.value; triggerAutoSave(); };
-      card.querySelector(".org-desc").oninput = (e) => { item.description = e.target.value; triggerAutoSave(); };
+      const getItem = () => {
+        if (!cvState || !cvState.organizations) return item;
+        return cvState.organizations.find(it => it.id === item.id) || cvState.organizations[index] || item;
+      };
 
-      card.querySelector(".btn-move-up").onclick = () => moveItem(items, index, -1, renderOrganizationsList);
-      card.querySelector(".btn-move-down").onclick = () => moveItem(items, index, 1, renderOrganizationsList);
+      card.querySelector(".org-name").oninput = (e) => { getItem().name = e.target.value; dirtyFields.add("organizations"); triggerAutoSave(); };
+      card.querySelector(".org-role").oninput = (e) => { getItem().role = e.target.value; dirtyFields.add("organizations"); triggerAutoSave(); };
+      card.querySelector(".org-period").oninput = (e) => { getItem().period = e.target.value; dirtyFields.add("organizations"); triggerAutoSave(); };
+      card.querySelector(".org-desc").oninput = (e) => { getItem().description = e.target.value; dirtyFields.add("organizations"); triggerAutoSave(); };
+
+      card.querySelector(".btn-move-up").onclick = () => { dirtyFields.add("organizations"); moveItem(items, index, -1, renderOrganizationsList); };
+      card.querySelector(".btn-move-down").onclick = () => { dirtyFields.add("organizations"); moveItem(items, index, 1, renderOrganizationsList); };
       card.querySelector(".btn-delete-item").onclick = () => {
+        dirtyFields.add("organizations");
         items.splice(index, 1);
         renderOrganizationsList();
         triggerAutoSave();
@@ -1431,6 +1556,7 @@ function renderOrganizationsList() {
   const btnAdd = document.getElementById("btn-add-organization");
   if (btnAdd) {
     btnAdd.onclick = () => {
+      dirtyFields.add("organizations");
       if (!cvState.organizations) cvState.organizations = [];
       cvState.organizations.push({
         id: "org-" + Date.now(),
@@ -1474,6 +1600,7 @@ function renderSettingsForm() {
     fontSelect.value = cvState.settings.fontFamily;
     fontSelect.onchange = (e) => {
       cvState.settings.fontFamily = e.target.value;
+      dirtyFields.add("settings");
       triggerAutoSave();
     };
   }
@@ -1483,6 +1610,7 @@ function renderSettingsForm() {
     sizeSelect.value = cvState.settings.fontSize;
     sizeSelect.onchange = (e) => {
       cvState.settings.fontSize = e.target.value;
+      dirtyFields.add("settings");
       triggerAutoSave();
     };
   }
@@ -1540,14 +1668,17 @@ function renderSectionOrderManager() {
           cvState.hiddenSections.push(secKey);
         }
       }
+      dirtyFields.add("hiddenSections");
       renderSectionOrderManager();
       triggerAutoSave();
     };
 
     li.querySelector(".btn-sec-up").onclick = () => {
+      dirtyFields.add("sectionOrder");
       moveItem(cvState.sectionOrder, idx, -1, renderSectionOrderManager);
     };
     li.querySelector(".btn-sec-down").onclick = () => {
+      dirtyFields.add("sectionOrder");
       moveItem(cvState.sectionOrder, idx, 1, renderSectionOrderManager);
     };
 
@@ -1566,6 +1697,7 @@ function renderJobDescriptionForm() {
     jdTextarea.value = cvState.jobDescriptionText || "";
     jdTextarea.oninput = (e) => {
       cvState.jobDescriptionText = e.target.value;
+      dirtyFields.add("jobDescriptionText");
       updateJobDescriptionMatcherUI();
       triggerAutoSave();
     };
@@ -1575,6 +1707,7 @@ function renderJobDescriptionForm() {
     btnClearJd.onclick = () => {
       cvState.jobDescriptionText = "";
       if (jdTextarea) jdTextarea.value = "";
+      dirtyFields.add("jobDescriptionText");
       updateJobDescriptionMatcherUI();
       triggerAutoSave();
     };
@@ -2077,11 +2210,14 @@ function updateActiveVersionPill() {
   const labelEl = document.getElementById("active-version-label");
   if (!labelEl) return;
   const versions = loadCVVersions(cvState);
-  const activeId = getActiveVersionId();
-  const activeVer = versions.find(v => v.id === activeId) || versions[0];
+  const activeId = currentVersionId || getActiveVersionId();
+  const activeVer = versions.find(v => v.id === activeId);
   if (activeVer) {
     const docLangTag = (activeVer.data && activeVer.data.documentLanguage === "en") ? "EN" : "ID";
     labelEl.textContent = `${activeVer.name} (${docLangTag})`;
+  } else {
+    const isEn = (cvState && cvState.documentLanguage === "en") || getInterfaceLanguage() === "en";
+    labelEl.textContent = isEn ? "Deleted Version (Conflict)" : "Versi Terhapus (Konflik)";
   }
 }
 
@@ -2089,7 +2225,7 @@ function renderVersionsModalList() {
   const container = document.getElementById("versions-list-container");
   if (!container) return;
   const versions = loadCVVersions(cvState);
-  const activeId = getActiveVersionId();
+  const activeId = currentVersionId || getActiveVersionId();
   const localeCode = getInterfaceLanguage() === "en" ? "en-US" : "id-ID";
 
   container.innerHTML = versions.map(v => {
@@ -2123,9 +2259,17 @@ function renderVersionsModalList() {
 
   container.querySelectorAll(".btn-switch-version").forEach(btn => {
     btn.onclick = () => {
+      if (!flushAutoSave()) {
+        showToast(t("status.saveError"));
+        return;
+      }
       const targetData = setActiveVersionId(btn.dataset.id);
       if (targetData) {
+        currentVersionId = btn.dataset.id;
+        lastAppliedDataTimestamp = null;
         cvState = mergeWithDefaults(targetData, defaultEmptyCV);
+        isStateDirty = false;
+        dirtyFields.clear();
         applyDocumentPlaceholders();
         renderAllFormFields();
         updateLivePreview();
@@ -2134,6 +2278,8 @@ function renderVersionsModalList() {
         updateActiveVersionPill();
         renderVersionsModalList();
         showToast(t("toasts.versionSwitched"));
+      } else {
+        showToast(t("status.saveError"));
       }
     };
   });
@@ -2151,9 +2297,17 @@ function renderVersionsModalList() {
 
   container.querySelectorAll(".btn-delete-version").forEach(btn => {
     btn.onclick = () => {
+      if (!flushAutoSave()) {
+        showToast(t("status.saveError"));
+        return;
+      }
       if (deleteCVVersion(btn.dataset.id)) {
+        currentVersionId = getActiveVersionId();
+        lastAppliedDataTimestamp = null;
         const currentRaw = loadCVFromStorage();
         cvState = mergeWithDefaults(currentRaw, defaultEmptyCV);
+        isStateDirty = false;
+        dirtyFields.clear();
         applyDocumentPlaceholders();
         renderAllFormFields();
         updateLivePreview();
@@ -2161,17 +2315,61 @@ function renderVersionsModalList() {
         updateActiveVersionPill();
         renderVersionsModalList();
         showToast(t("toasts.versionDeleted"));
+      } else {
+        showToast(t("status.saveError"));
       }
     };
   });
 }
 
 // ==========================================================================
-// Autosave & Helper Debounce
+// Autosave, Flush & Helper Debounce
 // ==========================================================================
+export function flushAutoSave() {
+  if (saveDebounceTimer) {
+    clearTimeout(saveDebounceTimer);
+    saveDebounceTimer = null;
+  }
+
+  if (!isStateDirty) {
+    return true;
+  }
+
+  if (cvState) {
+    const targetVerId = currentVersionId || getActiveVersionId();
+    const savedOk = saveCVToStorage(cvState, targetVerId);
+    updateActiveVersionPill();
+    const statusEl = document.getElementById("save-status-text");
+    const btnBackupErr = document.getElementById("btn-backup-on-error");
+    if (savedOk) {
+      isStateDirty = false;
+      dirtyFields.clear();
+      lastAppliedDataTimestamp = getLastSavedTimestamp() || new Date().toISOString();
+      if (btnBackupErr) btnBackupErr.style.display = "none";
+      if (statusEl) {
+        const timeStr = formatSavedTime(new Date(), getInterfaceLanguage());
+        statusEl.textContent = t("status.savedAt", { time: timeStr });
+      }
+    } else {
+      isStateDirty = true;
+      if (statusEl) statusEl.textContent = t("status.saveError");
+      if (btnBackupErr) btnBackupErr.style.display = "inline-flex";
+    }
+    return savedOk;
+  }
+  isStateDirty = false;
+  dirtyFields.clear();
+  return true;
+}
+
+if (typeof window !== "undefined") {
+  window.__atsFlushAutoSave = flushAutoSave;
+}
+
 function triggerAutoSave() {
   hideStarterBanner();
   hideCorruptStorageAlert();
+  isStateDirty = true;
 
   const statusEl = document.getElementById("save-status-text");
   const btnBackupErr = document.getElementById("btn-backup-on-error");
@@ -2179,19 +2377,25 @@ function triggerAutoSave() {
 
   clearTimeout(saveDebounceTimer);
   saveDebounceTimer = setTimeout(() => {
-    const savedOk = saveCVToStorage(cvState);
+    saveDebounceTimer = null;
+    const targetVerId = currentVersionId || getActiveVersionId();
+    const savedOk = saveCVToStorage(cvState, targetVerId);
     updateLivePreview();
     updateCompletenessWidget();
     updateJobDescriptionMatcherUI();
     updateActiveVersionPill();
 
     if (savedOk) {
+      isStateDirty = false;
+      dirtyFields.clear();
+      lastAppliedDataTimestamp = getLastSavedTimestamp() || new Date().toISOString();
       if (btnBackupErr) btnBackupErr.style.display = "none";
       if (statusEl) {
         const timeStr = formatSavedTime(new Date(), getInterfaceLanguage());
         statusEl.textContent = t("status.savedAt", { time: timeStr });
       }
     } else {
+      isStateDirty = true;
       if (statusEl) {
         statusEl.textContent = t("status.saveError");
       }
@@ -2200,6 +2404,238 @@ function triggerAutoSave() {
       }
     }
   }, 350);
+}
+
+function setupPageLifecycleFlush() {
+  window.addEventListener("pagehide", () => flushAutoSave());
+  window.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushAutoSave();
+  });
+  window.addEventListener("beforeunload", () => flushAutoSave());
+}
+
+function syncNonConflictingFields(incomingData) {
+  if (!incomingData || !cvState) return;
+  const activeElId = document.activeElement ? document.activeElement.id : "";
+
+  // 1. Sinkronkan documentLanguage jika tidak dirty di tab ini
+  const isDocLangDirty = dirtyFields.has("documentLanguage") || activeElId === "select-document-language" || activeElId === "select-preview-doc-language";
+  if (!isDocLangDirty && incomingData.documentLanguage) {
+    const nextDocLang = normalizeLanguage(incomingData.documentLanguage);
+    if (cvState.documentLanguage !== nextDocLang) {
+      cvState.documentLanguage = nextDocLang;
+      const docLangSelect = document.getElementById("select-document-language");
+      const previewDocLangSelect = document.getElementById("select-preview-doc-language");
+      if (docLangSelect && docLangSelect !== document.activeElement) docLangSelect.value = nextDocLang;
+      if (previewDocLangSelect && previewDocLangSelect !== document.activeElement) previewDocLangSelect.value = nextDocLang;
+      const previewDoc = document.getElementById("cv-live-document");
+      if (previewDoc) previewDoc.setAttribute("lang", nextDocLang);
+      applyDocumentPlaceholders();
+    }
+  }
+
+  // 2. Sinkronkan careerTrack jika tidak dirty
+  const isCareerTrackDirty = dirtyFields.has("careerTrack") || activeElId === "select-career-track";
+  if (!isCareerTrackDirty && incomingData.careerTrack) {
+    const nextTrack = incomingData.careerTrack === "freshgrad" ? "freshgrad" : "experienced";
+    if (cvState.careerTrack !== nextTrack) {
+      cvState.careerTrack = nextTrack;
+      const careerSelect = document.getElementById("select-career-track");
+      if (careerSelect && careerSelect !== document.activeElement) careerSelect.value = nextTrack;
+      const expHelper = document.getElementById("exp-section-helper");
+      if (expHelper) {
+        expHelper.textContent = nextTrack === "freshgrad"
+          ? t("sections.experienceHelperFresh")
+          : t("sections.experienceHelperExp");
+      }
+    }
+  }
+
+  // 3. Sinkronkan data profile selain input yang sedang aktif difokuskan pengguna atau memiliki edit pending lokal
+  if (incomingData.profile && cvState.profile) {
+    const profileFieldMap = {
+      "prof-name": "fullName",
+      "prof-title": "jobTitle",
+      "prof-email": "email",
+      "prof-phone": "phone",
+      "prof-location": "location",
+      "prof-linkedin": "linkedin",
+      "prof-portfolio": "portfolio"
+    };
+    for (const [inputId, prop] of Object.entries(profileFieldMap)) {
+      const isFieldDirty = dirtyFields.has(inputId) || dirtyFields.has("profile." + prop) || inputId === activeElId;
+      if (!isFieldDirty && incomingData.profile[prop] !== undefined) {
+        if (!cvState.profile[prop] || cvState.profile[prop] !== incomingData.profile[prop]) {
+          cvState.profile[prop] = incomingData.profile[prop];
+          const inputEl = document.getElementById(inputId);
+          if (inputEl && inputEl !== document.activeElement) {
+            inputEl.value = incomingData.profile[prop] || "";
+          }
+        }
+      }
+    }
+  }
+
+  // 4. Sinkronkan summary jika bukan elemen yang sedang aktif dan tidak dirty
+  const isSummaryDirty = dirtyFields.has("summary-textarea") || dirtyFields.has("summary") || activeElId === "summary-textarea";
+  if (!isSummaryDirty && incomingData.summary !== undefined) {
+    if (cvState.summary !== incomingData.summary) {
+      cvState.summary = incomingData.summary;
+      const sumEl = document.getElementById("summary-textarea");
+      if (sumEl && sumEl !== document.activeElement) {
+        sumEl.value = incomingData.summary || "";
+      }
+    }
+  }
+
+  // 5. Sinkronkan jobDescriptionText jika tidak dirty dan bukan input aktif
+  const isJdDirty = dirtyFields.has("jobDescriptionText") || activeElId === "job-description-input" || activeElId === "jd-input-text";
+  if (!isJdDirty && typeof incomingData.jobDescriptionText === "string") {
+    if (cvState.jobDescriptionText !== incomingData.jobDescriptionText) {
+      cvState.jobDescriptionText = incomingData.jobDescriptionText;
+      const jdTextarea = document.getElementById("job-description-input") || document.getElementById("jd-input-text");
+      if (jdTextarea && jdTextarea !== document.activeElement) {
+        jdTextarea.value = incomingData.jobDescriptionText;
+      }
+    }
+  }
+
+  // 6. Sinkronkan urutan dan visibilitas section
+  if (!dirtyFields.has("sectionOrder") && Array.isArray(incomingData.sectionOrder)) {
+    cvState.sectionOrder = incomingData.sectionOrder;
+    renderSectionOrderManager();
+  }
+  if (!dirtyFields.has("hiddenSections") && Array.isArray(incomingData.hiddenSections)) {
+    cvState.hiddenSections = incomingData.hiddenSections;
+    renderSectionOrderManager();
+  }
+
+  // 7. Sinkronkan pengaturan tampilan & font
+  if (!dirtyFields.has("settings") && incomingData.settings && typeof incomingData.settings === "object") {
+    cvState.settings = { ...cvState.settings, ...incomingData.settings };
+    renderSettingsForm();
+  }
+
+  // 8. Sinkronkan bagian array jika user tidak sedang fokus di bagian tersebut dan tidak dirty,
+  // serta re-render daftar terkait agar event handler terikat ke array terkini
+  if (!dirtyFields.has("experience") && !activeElId.startsWith("exp-") && Array.isArray(incomingData.experience)) {
+    cvState.experience = incomingData.experience;
+    renderExperienceList();
+  }
+  if (!dirtyFields.has("education") && !activeElId.startsWith("edu-") && Array.isArray(incomingData.education)) {
+    cvState.education = incomingData.education;
+    renderEducationList();
+  }
+  if (!dirtyFields.has("projects") && !activeElId.startsWith("proj-") && Array.isArray(incomingData.projects)) {
+    cvState.projects = incomingData.projects;
+    renderProjectsList();
+  }
+  if (!dirtyFields.has("certifications") && !activeElId.startsWith("cert-") && Array.isArray(incomingData.certifications)) {
+    cvState.certifications = incomingData.certifications;
+    renderCertificationsList();
+  }
+  if (!dirtyFields.has("organizations") && !activeElId.startsWith("org-") && Array.isArray(incomingData.organizations)) {
+    cvState.organizations = incomingData.organizations;
+    renderOrganizationsList();
+  }
+  if (!dirtyFields.has("skills") && !activeElId.startsWith("skills-") && incomingData.skills) {
+    cvState.skills = incomingData.skills;
+    renderSkillsForm();
+  }
+
+  updateLivePreview();
+  updateCompletenessWidget();
+  updateJobDescriptionMatcherUI();
+}
+
+function applyIncomingVersionData(incomingData, timestamp = null) {
+  if (!incomingData || typeof incomingData !== "object") return;
+  if (timestamp && lastAppliedDataTimestamp && timestamp <= lastAppliedDataTimestamp) {
+    return;
+  }
+  if (timestamp) {
+    lastAppliedDataTimestamp = timestamp;
+  }
+
+  const hasPendingLocalEdits = isStateDirty || saveDebounceTimer !== null || dirtyFields.size > 0;
+  if (!hasPendingLocalEdits) {
+    cvState = mergeWithDefaults(incomingData, defaultEmptyCV);
+    applyDocumentPlaceholders();
+    renderAllFormFields();
+    updateLivePreview();
+    updateCompletenessWidget();
+    updateJobDescriptionMatcherUI();
+    updateActiveVersionPill();
+  } else {
+    syncNonConflictingFields(incomingData);
+  }
+}
+
+function setupCrossTabSync() {
+  window.addEventListener("storage", (e) => {
+    if (e.key === STORAGE_KEY && e.newValue) {
+      try {
+        const parsed = JSON.parse(e.newValue);
+        const incomingVersionId = parsed.versionId || null;
+        const incomingData = parsed.data || parsed;
+        const incomingTimestamp = parsed.savedAt || null;
+        if (incomingData && typeof incomingData === "object") {
+          // Jika draft berasal dari versi yang berbeda dengan versi yang sedang dibuka tab ini:
+          if (incomingVersionId && currentVersionId && incomingVersionId !== currentVersionId) {
+            // Jangan campur aduk atau merge field CV antar-versi yang berbeda!
+            return;
+          }
+          applyIncomingVersionData(incomingData, incomingTimestamp);
+        }
+      } catch (err) {
+        console.warn("Gagal menyinkronkan data antar-tab:", err);
+      }
+    } else if (e.key === ACTIVE_VERSION_KEY) {
+      const newActiveId = e.newValue;
+      if (newActiveId && newActiveId !== currentVersionId) {
+        // Tab lain mengganti active version. Jika tab lokal ini memiliki pending edits,
+        // SEGERA flush autosave ke versinya sendiri agar perubahannya tidak hilang atau tertukar!
+        if (isStateDirty || saveDebounceTimer !== null || dirtyFields.size > 0) {
+          flushAutoSave();
+        }
+      }
+      updateActiveVersionPill();
+      renderVersionsModalList();
+    } else if (e.key === VERSIONS_KEY) {
+      let versions = [];
+      try {
+        if (e.newValue) {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed && Array.isArray(parsed.items)) {
+            versions = parsed.items;
+          }
+        }
+      } catch (_) {}
+      if (versions.length === 0) {
+        versions = loadCVVersions();
+      }
+
+      const matchingVer = currentVersionId ? versions.find(v => v.id === currentVersionId) : null;
+      if (!matchingVer && currentVersionId) {
+        // Versi yang sedang dibuka tab ini telah dihapus oleh tab lain di LocalStorage.
+        // Tampilkan status error/konflik dan tombol cadangan darurat agar edit pengguna tidak hilang!
+        const statusEl = document.getElementById("save-status-text");
+        const btnBackupErr = document.getElementById("btn-backup-on-error");
+        if (statusEl) {
+          statusEl.textContent = t("status.saveError");
+        }
+        if (btnBackupErr) {
+          btnBackupErr.style.display = "inline-flex";
+        }
+        isStateDirty = true;
+      } else if (matchingVer && matchingVer.data) {
+        // Versi lokal ada di koleksi. Sinkronkan data jika ada pembaruan dari tab lain (misal versi nonaktif yang diedit di tab remote)
+        applyIncomingVersionData(matchingVer.data, matchingVer.updatedAt || null);
+      }
+      updateActiveVersionPill();
+      renderVersionsModalList();
+    }
+  });
 }
 
 function bindInput(id, initialVal, updateFn) {
@@ -2368,15 +2804,27 @@ function executePrintPDF() {
 // Modal Handlers, Interaksi Preset & Aksesibilitas Dialog
 // ==========================================================================
 function applySampleByTrack(careerTrack) {
+  if (!flushAutoSave()) {
+    showToast(t("status.saveError"));
+    return;
+  }
   // Gunakan documentLanguage yang sedang dipilih pada CV (independen dari bahasa antarmuka/browser)
   const targetDocLang = normalizeLanguage(cvState && cvState.documentLanguage);
 
   const dataset = getSampleDataset(careerTrack, targetDocLang);
   cvState = mergeWithDefaults(JSON.parse(JSON.stringify(dataset)), defaultEmptyCV);
   cvState.documentLanguage = targetDocLang;
+  isStateDirty = false;
+  dirtyFields.clear();
 
   editorViewMode = "all";
-  saveCVToStorage(cvState);
+  const targetVerId = currentVersionId || getActiveVersionId();
+  const saveOk = saveCVToStorage(cvState, targetVerId);
+  if (!saveOk) {
+    showToast(t("status.saveError"));
+    return;
+  }
+  lastAppliedDataTimestamp = getLastSavedTimestamp() || new Date().toISOString();
   hideCorruptStorageAlert();
   applyDocumentPlaceholders();
   renderAllFormFields();
@@ -2397,6 +2845,10 @@ function setupModalEvents() {
   const btnSelectExp = document.getElementById("btn-pick-experienced");
   if (btnSelectExp) {
     btnSelectExp.onclick = () => {
+      if (!flushAutoSave()) {
+        showToast(t("status.saveError"));
+        return;
+      }
       applySampleByTrack("experienced");
       closeModal("modal-sample-picker");
     };
@@ -2405,6 +2857,10 @@ function setupModalEvents() {
   const btnSelectFresh = document.getElementById("btn-pick-freshgrad");
   if (btnSelectFresh) {
     btnSelectFresh.onclick = () => {
+      if (!flushAutoSave()) {
+        showToast(t("status.saveError"));
+        return;
+      }
       applySampleByTrack("freshgrad");
       closeModal("modal-sample-picker");
     };
@@ -2413,11 +2869,28 @@ function setupModalEvents() {
   const btnConfirmReset = document.getElementById("btn-confirm-reset-action");
   if (btnConfirmReset) {
     btnConfirmReset.onclick = () => {
+      if (!flushAutoSave()) {
+        showToast(t("status.saveError"));
+        return;
+      }
       const preservedDocLang = normalizeLanguage(cvState && cvState.documentLanguage);
-      cvState = JSON.parse(JSON.stringify(defaultEmptyCV));
-      cvState.documentLanguage = preservedDocLang;
+      const freshEmpty = JSON.parse(JSON.stringify(defaultEmptyCV));
+      freshEmpty.documentLanguage = preservedDocLang;
+
+      const targetVerId = currentVersionId || getActiveVersionId();
+      const resetOk = resetActiveCVVersion(freshEmpty, targetVerId);
+      if (!resetOk) {
+        showToast(t("status.saveError"));
+        return;
+      }
+
+      cvState = freshEmpty;
+      currentVersionId = targetVerId;
+      lastAppliedDataTimestamp = null;
+      isStateDirty = false;
+      dirtyFields.clear();
       touchedFields.clear();
-      clearCVStorage();
+
       editorViewMode = "wizard";
       currentWizardStep = 1;
       applyDocumentPlaceholders();
@@ -2426,6 +2899,8 @@ function setupModalEvents() {
       updateLivePreview();
       updateCompletenessWidget();
       updateJobDescriptionMatcherUI();
+      updateActiveVersionPill();
+      renderVersionsModalList();
       showStarterBanner();
       closeModal("modal-confirm-reset");
       showToast(t("toasts.formResetDone"));
@@ -2446,11 +2921,19 @@ function setupModalEvents() {
 
   if (btnCreateEmptyVer) {
     btnCreateEmptyVer.onclick = () => {
+      if (!flushAutoSave()) {
+        showToast(t("status.saveError"));
+        return;
+      }
       const targetLang = resolveNewVersionDocLang();
       const name = (inputNewVer && inputNewVer.value.trim()) || (targetLang === "en" ? "New English CV" : "CV Baru");
       const created = createNewCVVersion(name, defaultEmptyCV, targetLang);
       if (created) {
+        currentVersionId = created.id;
+        lastAppliedDataTimestamp = null;
         cvState = mergeWithDefaults(created.data, defaultEmptyCV);
+        isStateDirty = false;
+        dirtyFields.clear();
         if (inputNewVer) inputNewVer.value = "";
         applyDocumentPlaceholders();
         renderAllFormFields();
@@ -2459,18 +2942,28 @@ function setupModalEvents() {
         updateActiveVersionPill();
         renderVersionsModalList();
         showToast(t("toasts.versionCreated", { name: created.name }));
+      } else {
+        showToast(t("status.saveError"));
       }
     };
   }
 
   if (btnDupCurrentVer) {
     btnDupCurrentVer.onclick = () => {
+      if (!flushAutoSave()) {
+        showToast(t("status.saveError"));
+        return;
+      }
       const targetLang = resolveNewVersionDocLang();
       const defaultName = `${(cvState.profile && cvState.profile.jobTitle) || "CV"} (${targetLang.toUpperCase()})`;
       const name = (inputNewVer && inputNewVer.value.trim()) || defaultName;
       const created = createNewCVVersion(name, cvState, targetLang);
       if (created) {
+        currentVersionId = created.id;
+        lastAppliedDataTimestamp = null;
         cvState = mergeWithDefaults(created.data, defaultEmptyCV);
+        isStateDirty = false;
+        dirtyFields.clear();
         if (inputNewVer) inputNewVer.value = "";
         applyDocumentPlaceholders();
         renderAllFormFields();
@@ -2479,6 +2972,8 @@ function setupModalEvents() {
         updateActiveVersionPill();
         renderVersionsModalList();
         showToast(t("toasts.versionDuplicated", { name: created.name }));
+      } else {
+        showToast(t("status.saveError"));
       }
     };
   }

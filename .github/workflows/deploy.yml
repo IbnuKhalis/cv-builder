@@ -3,7 +3,13 @@ name: Deploy ATS CV Builder to VPS
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
 
 jobs:
   test:
@@ -32,6 +38,9 @@ jobs:
       - name: Run browser & PDF verification (test_fixes.py)
         run: python tests/test_fixes.py
 
+      - name: Run audit regression suite (test_audit_fixes.py)
+        run: python tests/test_audit_fixes.py
+
   deploy:
     name: Deploy to Production VPS (vps-main)
     needs: test
@@ -55,16 +64,42 @@ jobs:
             fi
 
             cd /opt/projects/cv-builder
-            git fetch origin main
-            git reset --hard origin/main
+            # Pastikan hanya commit SHA teruji yang dideploy (bukan origin/main yang mungkin sudah bergeser)
+            git fetch origin ${{ github.sha }}
+            git reset --hard ${{ github.sha }}
 
             docker compose -f docker-compose.vps.yml build --pull
             docker compose -f docker-compose.vps.yml up -d --remove-orphans
             docker compose -f docker-compose.vps.yml ps
 
-            # Wait briefly for healthcheck and verify internal HTTP 200 response
-            sleep 5
+            # Bounded wait for container healthcheck (maksimal 30 detik)
+            HEALTHY=false
+            for i in $(seq 1 15); do
+              STATUS=$(docker inspect --format='{{json .State.Health.Status}}' cv-builder 2>/dev/null || echo '"unknown"')
+              if [ "$STATUS" = '"healthy"' ]; then
+                echo "cv-builder is healthy!"
+                HEALTHY=true
+                break
+              fi
+              echo "Waiting for cv-builder to become healthy ($i/15)..."
+              sleep 2
+            done
+
+            if [ "$HEALTHY" != "true" ]; then
+              echo "Healthcheck timeout! Container cv-builder is not healthy."
+              docker logs --tail 50 cv-builder
+              exit 1
+            fi
+
+            # Verifikasi respons internal HTTP 200
             docker exec cv-builder wget -q -O /dev/null http://127.0.0.1:8080/
 
-            # Reload Caddy Reverse Proxy without downtime
+            # Reload Caddy Reverse Proxy tanpa downtime
             docker exec caddy-proxy caddy reload --config /etc/caddy/Caddyfile
+
+            # Public smoke test (HTTPS response)
+            echo "Running public endpoint smoke test..."
+            curl -fsS -o /dev/null https://cv.digitalneeds.my.id/ || {
+              echo "Public endpoint smoke test failed!"
+              exit 1
+            }

@@ -18,7 +18,8 @@ export const localeId = {
     moreMenu: "Lainnya ▾",
     loadSample: "📋 Muat Data Contoh",
     manageVersions: "🗂️ Kelola Versi CV",
-    exportJson: "💾 Ekspor Backup JSON",
+    exportJson: "💾 Ekspor CV Aktif (JSON)",
+    exportFullBackup: "📦 Cadangkan Semua Versi (JSON)",
     importJson: "📂 Impor File JSON",
     resetCv: "🗑️ Kosongkan Formulir",
     appLanguageLabel: "🌐 Bahasa Aplikasi"
@@ -328,6 +329,7 @@ export const localeId = {
     welcomeNew: "Selamat datang! Silakan pilih jalur karir, contoh CV, atau mulai isi data Anda.",
     storageResetSafe: "Penyimpanan browser telah direset dengan aman.",
     backupDownloaded: "Cadangan JSON berhasil diunduh.",
+    backupRestored: "Cadangan seluruh versi berhasil dipulihkan!",
     jsonExported: "Draft berhasil diekspor sebagai JSON.",
     jsonImported: "Draft CV berhasil diimpor!",
     trackFreshActive: "Jalur Fresh Graduate aktif: Pendidikan & Organisasi diprioritaskan.",

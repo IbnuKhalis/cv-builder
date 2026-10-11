@@ -205,6 +205,9 @@ Invariannya:
 
 Uji CSP pada deployment pertama. Jika ada pelanggaran, perbaiki sumber asset atau directive paling sempit; jangan menonaktifkan seluruh CSP.
 
+> [!NOTE] Penyelarasan Edge Cloudflare Web Analytics & Privasi Data:
+> Domain `digitalneeds.my.id` mengaktifkan Cloudflare Web Analytics di dashboard edge yang menyisipkan beacon script anonim (`https://static.cloudflareinsights.com`). CSP pada blok Caddy produksi mengizinkan script dan koneksi ini (`script-src 'self' https://static.cloudflareinsights.com; connect-src 'self' https://cloudflareinsights.com;`). Beacon ini mengukur metrik performa teknis pemuatan halaman (Core Web Vitals). Aplikasi ATS CV Builder tidak memiliki backend dan tidak mentransmisikan data CV ke server mana pun; seluruh penyimpanan, pengolahan, dan ekspor CV berjalan secara lokal di browser pengguna.
+
 ## Git dan repository
 
 Standar infrastruktur menetapkan Git sebagai single source of truth. Pastikan proyek sudah memiliki repository dan branch default yang disepakati sebelum setup CI/CD.
@@ -330,7 +333,7 @@ Tambahkan monitor HTTPS di Uptime Kuma existing:
 - Keyword opsional: `ATS CV Builder`.
 - Notifikasi mengikuti channel yang sudah terpasang.
 
-Tidak perlu menambahkan analytics atau telemetry. Monitoring hanya memeriksa availability endpoint publik.
+Tidak perlu menambahkan analytics atau telemetry kustom aplikasi. Monitoring availability endpoint publik dilakukan melalui Uptime Kuma, sementara metrik performa pemuatan halaman diukur anonim oleh Cloudflare Web Analytics di edge. Seluruh isi dan pembuatan CV sepenuhnya bebas telemetry (zero personal data collection).
 
 ## Backup
 

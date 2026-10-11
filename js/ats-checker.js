@@ -5,7 +5,7 @@
  * tanpa memberikan klaim skor persentase kelulusan seleksi kerja.
  */
 
-import { t, getInterfaceLanguage, getDocumentCopy, normalizeLanguage } from "./i18n.js";
+import { t, getInterfaceLanguage, getDocumentCopy, normalizeLanguage } from "./i18n.js?v=0.2.0";
 
 /**
  * Validasi format email standar.

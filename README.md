@@ -154,6 +154,8 @@ CV Builder/
 - [Laporan QA dan production readiness](docs/QA_PRODUCTION_READINESS.md)
 - [Re-verifikasi QA 23 September 2026](docs/QA_REVERIFICATION_2026-09-23.md)
 - [Rencana deployment VPS](docs/VPS_DEPLOYMENT_PLAN.md)
+- [Audit kesiapan V0.2 Job Tracker — 9 Oktober 2026](docs/AUDIT_READINESS_V0.2_2026-10-09.md)
+- [Implementasi temuan audit V0.2 — 9 Oktober 2026](docs/AUDIT_IMPLEMENTATION_V0.2.md)
 
 ## Aturan Khusus Proyek
 

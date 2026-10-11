@@ -3,8 +3,8 @@
  * Memisahkan Bahasa Antarmuka (interfaceLanguage) dari Bahasa Dokumen CV (documentLanguage).
  */
 
-import { localeId } from "./locales/id.js";
-import { localeEn } from "./locales/en.js";
+import { localeId } from "./locales/id.js?v=0.2.0";
+import { localeEn } from "./locales/en.js?v=0.2.0";
 
 export const UI_PREFERENCES_KEY = "ats_cv_builder_ui_preferences_v1";
 export const SUPPORTED_LANGUAGES = ["id", "en"];

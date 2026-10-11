@@ -42,7 +42,8 @@ def test_file_integrity():
         "js/ats-checker.js",
         "js/i18n.js",
         "js/locales/id.js",
-        "js/locales/en.js"
+        "js/locales/en.js",
+        "tests/test_audit_fixes.py"
     ]
     all_ok = True
     for f in required_files:
@@ -65,8 +66,8 @@ def test_html_structure():
         ("Responsive viewport meta tag", r'<meta[^>]+viewport'),
         ("UTF-8 charset declaration", r'<meta[^>]+charset=["\']?UTF-8["\']?'),
         ("Title tag present", r'<title>.*ATS CV Builder.*</title>'),
-        ("CSS link to style.css", r'href=["\']css/style.css["\']'),
-        ("CSS link to cv-ats.css", r'href=["\']css/cv-ats.css["\']'),
+        ("CSS link to style.css", r'href=["\']css/style.css(?:\?[^"\']*)?["\']'),
+        ("CSS link to cv-ats.css", r'href=["\']css/cv-ats.css(?:\?[^"\']*)?["\']'),
         ("Live document preview container", r'id=["\']cv-live-document["\']'),
         ("Contact form inputs", r'id=["\']prof-name["\']'),
         ("Summary textarea", r'id=["\']summary-textarea["\']'),
@@ -77,7 +78,7 @@ def test_html_structure():
         ("Plain text ATS copy button", r'id=["\']btn-copy-plain-text["\']'),
         ("Sample data modal trigger", r'id=["\']btn-open-sample-modal["\']'),
         ("Completeness checklist widget", r'id=["\']completeness-percent["\']'),
-        ("Module script tag for app.js", r'<script[^>]+type=["\']module["\'][^>]+src=["\']js/app.js["\']')
+        ("Module script tag for app.js", r'<script[^>]+type=["\']module["\'][^>]+src=["\']js/app.js(?:\?[^"\']*)?["\']')
     ]
 
     for label, pattern in checks:
@@ -154,6 +155,9 @@ def test_javascript_modules():
 def test_server_http():
     print("\n--- 5. Testing Local Server HTTP Responses ---")
     import server
+
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    urllib.request.install_opener(opener)
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind(("127.0.0.1", 0))

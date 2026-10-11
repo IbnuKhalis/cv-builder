@@ -18,7 +18,8 @@ export const localeEn = {
     moreMenu: "More ▾",
     loadSample: "📋 Load Sample Data",
     manageVersions: "🗂️ Manage CV Versions",
-    exportJson: "💾 Export JSON Backup",
+    exportJson: "💾 Export Active CV (JSON)",
+    exportFullBackup: "📦 Backup All Versions (JSON)",
     importJson: "📂 Import JSON File",
     resetCv: "🗑️ Clear Form",
     appLanguageLabel: "🌐 App Language"
@@ -328,6 +329,7 @@ export const localeEn = {
     welcomeNew: "Welcome! Choose a career track, sample CV, or start filling in your details.",
     storageResetSafe: "Browser storage has been safely reset.",
     backupDownloaded: "JSON backup downloaded successfully.",
+    backupRestored: "All versions restored successfully from backup!",
     jsonExported: "Draft exported as JSON.",
     jsonImported: "CV draft imported successfully!",
     trackFreshActive: "Fresh Graduate track active: Education & Organizations prioritized.",

@@ -7,8 +7,8 @@
   <meta name="description" content="Aplikasi pembuat CV ATS bahasa Indonesia. Format single-column, bebas foto & tabel, ramah mesin pemindai ATS, simpan langsung ke PDF vektor asli.">
   
   <!-- Stylesheets -->
-  <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="css/cv-ats.css">
+  <link rel="stylesheet" href="css/style.css?v=0.2.0">
+  <link rel="stylesheet" href="css/cv-ats.css?v=0.2.0">
 </head>
 <body>
 
@@ -71,7 +71,10 @@
             <span data-i18n="header.importJson">📂 Impor File JSON</span>
           </button>
           <button type="button" id="btn-export-json" class="dropdown-item" role="menuitem">
-            <span data-i18n="header.exportJson">💾 Ekspor Backup JSON</span>
+            <span data-i18n="header.exportJson">💾 Ekspor CV Aktif (JSON)</span>
+          </button>
+          <button type="button" id="btn-export-full-backup" class="dropdown-item" role="menuitem">
+            <span data-i18n="header.exportFullBackup">📦 Cadangkan Semua Versi (JSON)</span>
           </button>
           <hr class="dropdown-divider" />
           <button type="button" id="btn-reset-cv" class="dropdown-item dropdown-item-danger" role="menuitem">
@@ -660,7 +663,7 @@
   <div id="a11y-live-announcer" class="sr-only" aria-live="polite" aria-atomic="true"></div>
 
   <!-- Logic Scripts -->
-  <script type="module" src="js/app.js"></script>
+  <script type="module" src="js/app.js?v=0.2.0"></script>
 
 </body>
 </html>
